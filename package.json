@@ -1,0 +1,22 @@
+{
+  "name": "hik-mgr",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "yarn@4.5.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build:shared": "yarn workspace @hik-mgr/shared build",
+    "build:server": "yarn workspace @hik-mgr/server build",
+    "build:web": "yarn workspace @hik-mgr/web build",
+    "build": "yarn build:shared && yarn build:server && yarn build:web",
+    "dev": "yarn build:shared && concurrently -n server,web -c blue,green \"yarn workspace @hik-mgr/server dev\" \"yarn workspace @hik-mgr/web dev\"",
+    "start": "node apps/server/dist/index.js"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.5.4"
+  }
+}

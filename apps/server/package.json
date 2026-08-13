@@ -1,0 +1,32 @@
+{
+  "name": "@hik-mgr/server",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@hik-mgr/shared": "workspace:*",
+    "@mhoc/axios-digest-auth": "^0.8.0",
+    "axios": "^1.6.7",
+    "better-sqlite3": "^11.3.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "drizzle-orm": "^0.33.0",
+    "express": "^4.19.2",
+    "fast-xml-parser": "^4.3.5",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.2",
+    "drizzle-kit": "^0.24.2",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.4"
+  }
+}

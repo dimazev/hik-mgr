@@ -1,0 +1,54 @@
+import { z } from 'zod';
+
+/**
+ * Input schema for creating/updating a managed Hikvision device.
+ * `password` is only ever accepted here (write side) — it's encrypted at
+ * rest server-side and never returned by the API (see the `Device`
+ * interface below, which deliberately has no password field).
+ */
+export const deviceInputSchema = z.object({
+  name: z.string().min(1, 'name is required').max(200),
+  host: z.string().min(1, 'host is required').max(255),
+  port: z.coerce.number().int().min(1).max(65535).default(80),
+  protocol: z.enum(['http', 'https']).default('http'),
+  username: z.string().min(1).max(100).default('admin'),
+  password: z.string().min(1, 'password is required').max(500),
+});
+
+export type DeviceInput = z.infer<typeof deviceInputSchema>;
+
+/** Same as deviceInputSchema but every field optional, for PATCH/PUT updates. */
+export const deviceUpdateSchema = deviceInputSchema.partial();
+export type DeviceUpdateInput = z.infer<typeof deviceUpdateSchema>;
+
+/** Device as returned by the API — never includes the password. */
+export interface Device {
+  id: number;
+  name: string;
+  host: string;
+  port: number;
+  protocol: 'http' | 'https';
+  username: string;
+  createdAt: string;
+}
+
+export interface Channel {
+  id: number;
+  name: string;
+  ip?: string | null;
+  online?: boolean | null;
+}
+
+export interface RecordingFile {
+  trackID: number;
+  startTime?: string;
+  endTime?: string;
+  playbackURI: string;
+  contentType?: string;
+  sizeBytes?: number;
+  deviceChannelName?: string | null;
+}
+
+export interface DeviceStatus {
+  raw: unknown;
+}

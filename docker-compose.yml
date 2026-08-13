@@ -1,0 +1,12 @@
+services:
+  hik-mgr:
+    build: .
+    ports:
+      - '4000:4000'
+    environment:
+      PORT: 4000
+      APP_SECRET: ${APP_SECRET:?Set APP_SECRET in .env}
+      DB_PATH: /app/data/hik-mgr.sqlite
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

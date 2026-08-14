@@ -278,7 +278,8 @@ router.get(
 router.get(
   '/:id/files',
   asyncHandler(async (req, res) => {
-    const row = getDeviceRow(Number(req.params.id));
+    const deviceId = Number(req.params.id);
+    const row = getDeviceRow(deviceId);
     if (!row) {
       res.status(404).json({ error: 'Device not found' });
       return;

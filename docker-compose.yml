@@ -24,5 +24,35 @@ services:
       HIK_USERNAME: ${HIK_USERNAME:-}
       HIK_PASSWORD: ${HIK_PASSWORD:-}
     volumes:
+      # Bind-mounts the whole repo into the container so source edits made
+      # on the host are visible inside it immediately. Combined with
+      # bootstrap.sh already reinstalling deps and rebuilding from scratch
+      # every time the container's process starts, this means a plain
+      # `docker compose restart` (which stops and starts the SAME
+      # container, re-running its entrypoint) now picks up code changes —
+      # no `docker compose up --build` / image rebuild needed for source
+      # edits. You only need an actual rebuild when something outside the
+      # source tree changes: the Dockerfile itself, or an OS-level package
+      # it installs (python3/make/g++/ffmpeg).
+      - .:/app
       - ./data:/app/data
+    # node_modules is deliberately carved back out of the bind mount above
+    # via tmpfs (RAM-backed, container-private) rather than a regular named/
+    # anonymous volume: without this, the container would see whatever
+    # node_modules happens to be sitting in the repo on the host (e.g. from
+    # running `yarn install` locally on macOS), and native modules like
+    # better-sqlite3 are compiled per-OS/arch — a macOS build won't load
+    # inside this Linux container. Unlike an anonymous volume, tmpfs
+    # content does NOT persist across a container restart — it's wiped
+    # every time the container (re)starts, so bootstrap.sh's `yarn install`
+    # is always a genuinely fresh install, never reusing packages left over
+    # from a previous run. Tradeoff: node_modules lives in host RAM while
+    # the container is running (a few hundred MB, typically), and restarts
+    # take as long as a full install every time — there's no more "fast
+    # restart because node_modules was already there".
+    tmpfs:
+      - /app/node_modules
+      - /app/packages/shared/node_modules
+      - /app/apps/server/node_modules
+      - /app/apps/web/node_modules
     restart: unless-stopped

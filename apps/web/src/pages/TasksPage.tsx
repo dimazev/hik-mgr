@@ -212,10 +212,14 @@ function TaskRow({ task }: { task: DownloadTask }) {
     // in progress, since that status only tracks downloads.
     refetchInterval: (query) => {
       if (!expanded) return false;
-      if (isActive(task.status)) return 1500;
+      // 2.5s rather than the download/convert progress's own ~1s
+      // reporting cadence — each tick is a synchronous SQLite read on the
+      // server, and sub-second freshness here isn't noticeable in the UI
+      // anyway, so there's no reason to poll faster than that.
+      if (isActive(task.status)) return 2500;
       const files = query.state.data?.files ?? [];
       const converting = files.some((f) => f.convertStatus === 'converting');
-      return converting ? 1500 : false;
+      return converting ? 2500 : false;
     },
   });
 

@@ -21,7 +21,7 @@
     "docker:build": "docker compose build",
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down",
-    "clean": "rm -rf apps/server/dist apps/web/dist packages/shared/dist"
+    "clean": "rm -rf apps/server/dist apps/web/dist packages/shared/dist apps/web/tsconfig.tsbuildinfo"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

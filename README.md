@@ -45,21 +45,55 @@ on the host (bind-mounted into the container).
 
 **The image ships source only — `node_modules` is never baked in.**
 `bootstrap.sh` runs `yarn install` and the full `yarn build` (shared →
-server → web) itself, once, every time a container actually starts (see
-`Dockerfile` / `bootstrap.sh` at the repo root). That means every start
-does a real first-time-style install, so expect the container to sit on
-"installing dependencies..." / "building shared -> server -> web..." in
-`docker compose logs -f` for a while before "starting server..." — this
-is normal, not a hang. The tradeoff is deliberate: it guarantees
-`better-sqlite3` (and any other native module) is always compiled fresh
-against the exact Node/OS/arch the container is actually running on,
-instead of risking a precompiled binary that was baked into the image
-under a slightly different environment. If you'd rather trade that
-guarantee for a faster restart, you can mount a named volume over
-`/app/node_modules` in `docker-compose.yml` so installed packages persist
-across `docker compose up`/`down` (though not across `--build`, since
-that recreates the image and, if you're not using a volume, the
-container's writable layer with it).
+server → web) itself every time the container's process starts (see
+`Dockerfile` / `bootstrap.sh` at the repo root), so expect the container
+to sit on "installing dependencies..." / "building shared -> server ->
+web..." in `docker compose logs -f` for a while before "starting
+server..." — this is normal, not a hang. The tradeoff is deliberate: it
+guarantees `better-sqlite3` (and any other native module) is always
+compiled fresh against the exact Node/OS/arch the container is actually
+running on, instead of risking a precompiled binary baked into the image
+under a slightly different environment.
+
+### Picking up code changes: `restart` vs. `up --build`
+
+`docker-compose.yml` bind-mounts the whole repo into the container
+(`.:/app`), so an edit you make on the host is visible inside the
+container immediately — combined with bootstrap.sh always reinstalling
+and rebuilding on startup, that means:
+
+```bash
+docker compose restart   # picks up any source change, no rebuild needed
+```
+
+`docker compose restart` stops and starts the *same* container, which
+re-runs `bootstrap.sh` from scratch against whatever's on disk right now
+— so this is enough after editing any `.ts`/`.tsx` file, `package.json`,
+etc. `node_modules` itself is carved back out of that bind mount via
+`tmpfs` mounts (so the container keeps its own Linux-built `node_modules`,
+never the host's — see the comments in `docker-compose.yml`). Unlike a
+regular volume, `tmpfs` content does **not** persist across a restart —
+it's wiped every time, so every restart runs a genuinely fresh
+`yarn install` (never reusing packages from a previous run) and a
+genuinely full rebuild (`bootstrap.sh` also runs `yarn clean` before
+building, clearing both `dist/` and `apps/web`'s incremental
+`tsconfig.tsbuildinfo`, so it's never skipping unchanged files either).
+The tradeoff is a slower restart every time — there's no "fast restart
+because node_modules was already there" — in exchange for every start
+being provably built from exactly what's on disk right now, with nothing
+left over from a previous run.
+
+You only need a real image rebuild —
+
+```bash
+docker compose up --build
+```
+
+— when something *outside* the bind-mounted source changes: the
+`Dockerfile` itself, or an OS-level package it installs
+(`python3`/`make`/`g++`/`ffmpeg`). Plain `docker compose up` (no
+`--build`) without a code change also works fine, since it's the same
+image either way.
 
 ## Running locally without Docker
 
@@ -267,9 +301,9 @@ file at a time:
 1. **Download** the raw recording from the device to `data/downloads/task-<id>/` (resumable via HTTP Range, same as `hik-connect`).
 2. **Convert** — once that file's download succeeds, ffmpeg immediately transcodes it to a smaller 720p copy in the same folder:
    ```
-   ffmpeg -i <in> -vf "scale=1280:720" -c:v libx264 -crf 26 -preset slow -an -movflags +faststart <out>
+   ffmpeg -i <in> -vf "scale=1280:720" -c:v libx264 -crf 26 -preset fast -an -movflags +faststart <out>
    ```
-   This is a *subtask* of the file, tracked and resumed independently of the download itself — a file can be fully downloaded while its conversion is still pending, in progress, or failed (most commonly because ffmpeg isn't installed — see [Running locally without Docker](#running-locally-without-docker)).
+   (`-preset fast`, not `slow` — `slow` is libx264's most CPU-intensive software-encode setting, which showed up as noticeable server-wide CPU usage during conversions; `fast` at the same `-crf 26` keeps the same constant-quality target for a somewhat larger file, a better tradeoff for a background batch job. The spawned ffmpeg process is also niced down via `os.setPriority` in `videoConvert.ts` so a conversion doesn't compete with the rest of the app for CPU.) This is a *subtask* of the file, tracked and resumed independently of the download itself — a file can be fully downloaded while its conversion is still pending, in progress, or failed (most commonly because ffmpeg isn't installed — see [Running locally without Docker](#running-locally-without-docker)).
 
 Progress for both subtasks — bytes downloaded, ffmpeg's percent complete —
 updates live on the **Tasks** page (linked from the top bar) roughly once

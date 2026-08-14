@@ -128,16 +128,12 @@ export async function runDownloadTask(taskId: number, conn: DeviceConn): Promise
         // previous, possibly much slower or interrupted, attempt.
         const attemptStartedAt = Date.now();
 
-        // Throttle DB writes + log lines to roughly once/sec — onProgress
-        // can fire many times a second for a fast local device, and
-        // there's no value in a DB write that often.
-        let lastReported = 0;
+        // downloadRecording (isapi.ts) already throttles onProgress to a
+        // fixed ~1/sec timer at the source — no need to throttle again
+        // here, this just does the DB write + log line every time it's
+        // called.
         const onProgress = (p: DownloadProgress) => {
-          const now = Date.now();
-          if (now - lastReported < 1000) return;
-          lastReported = now;
-
-          const elapsedSeconds = (now - attemptStartedAt) / 1000;
+          const elapsedSeconds = (Date.now() - attemptStartedAt) / 1000;
           const bytesThisAttempt = p.receivedBytes - p.resumedFrom;
           const bytesPerSecond = elapsedSeconds > 0 ? bytesThisAttempt / elapsedSeconds : 0;
           const remainingBytes = p.totalBytes !== null ? p.totalBytes - p.receivedBytes : null;

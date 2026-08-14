@@ -220,17 +220,24 @@ export async function downloadRecording(
     const out = fs.createWriteStream(destPath, { flags: startByte > 0 ? 'r+' : 'w', start: startByte });
     let receivedBytes = startByte;
 
-    if (onProgress) {
-      response.data.on('data', (chunk: Buffer) => {
-        receivedBytes += chunk.length;
-        onProgress({
-          receivedBytes,
-          totalBytes,
-          percent: totalBytes ? Math.min(100, (receivedBytes / totalBytes) * 100) : null,
-          resumedFrom: startByte,
-        });
+    const emitProgress = () =>
+      onProgress?.({
+        receivedBytes,
+        totalBytes,
+        percent: totalBytes ? Math.min(100, (receivedBytes / totalBytes) * 100) : null,
+        resumedFrom: startByte,
       });
-    }
+
+    // Byte counting on 'data' has to stay cheap — a fast LAN transfer can
+    // fire this hundreds of times a second — so it's just an addition
+    // here. The actual onProgress callback (which downloadWorker.ts turns
+    // into a DB write + log line) runs on a fixed 1s timer instead of on
+    // every chunk: nothing downstream needs sub-second granularity, and
+    // calling it per-chunk was pure wasted CPU on top of the real work.
+    response.data.on('data', (chunk: Buffer) => {
+      receivedBytes += chunk.length;
+    });
+    const progressTimer = onProgress ? setInterval(emitProgress, 1000) : undefined;
 
     response.data.pipe(out);
     // If the caller destroys the response stream to cancel mid-file (see
@@ -238,15 +245,23 @@ export async function downloadRecording(
     // leaving its file handle dangling — .pipe() doesn't do that on its
     // own when the *source* errors/closes.
     response.data.on('error', (err: Error) => {
+      if (progressTimer) clearInterval(progressTimer);
       out.destroy();
       reject(err);
     });
-    out.on('error', reject);
+    out.on('error', (err) => {
+      if (progressTimer) clearInterval(progressTimer);
+      reject(err);
+    });
     out.on('finish', () => {
+      if (progressTimer) clearInterval(progressTimer);
       if (totalBytes && receivedBytes < totalBytes) {
         reject(new Error(`Connection closed early: got ${receivedBytes} of ${totalBytes} bytes.`));
         return;
       }
+      // One last update at the true final byte count, so the UI doesn't
+      // sit at whatever the last 1s timer tick happened to show.
+      emitProgress();
       resolve();
     });
   });

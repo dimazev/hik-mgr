@@ -1,4 +1,17 @@
-import 'dotenv/config';
+import path from 'node:path';
+import dotenv from 'dotenv';
+
+// Always load the repo-root .env, regardless of the process's current
+// working directory — `yarn workspace @hik-mgr/server dev` (and thus
+// `yarn dev`/VS Code's "Debug Server" launch config) runs with cwd set to
+// apps/server, so plain `dotenv/config` (which reads .env from cwd) would
+// silently miss the root .env in that case while still finding it when run
+// via `yarn start` from the repo root. Resolving explicitly from
+// __dirname avoids that inconsistency: apps/server/src (dev, via tsx) and
+// apps/server/dist (prod, after `tsc` build) are both exactly three levels
+// under the repo root.
+const repoRoot = path.resolve(__dirname, '../../..');
+dotenv.config({ path: path.join(repoRoot, '.env') });
 
 function required(name: string, fallback?: string): string {
   const value = process.env[name] ?? fallback;
@@ -39,12 +52,22 @@ function hikDefault(): HikDefault | null {
   };
 }
 
+// Same cwd-independence concern as the .env load above: resolve a relative
+// DB_PATH against the repo root rather than whatever the process's cwd
+// happens to be, so `yarn dev`, `yarn start`, and VS Code's F5 all end up
+// pointing at the same `data/hik-mgr.sqlite`. Docker sets DB_PATH to an
+// absolute path (/app/data/...), which passes through unchanged.
+function resolveDbPath(): string {
+  const configured = process.env.DB_PATH || './data/hik-mgr.sqlite';
+  return path.isAbsolute(configured) ? configured : path.resolve(repoRoot, configured);
+}
+
 export const env = {
   port: Number(process.env.PORT || 4000),
   // Falls back to an insecure default so local `yarn dev` works out of the
   // box, but anyone deploying for real should set a proper APP_SECRET in
   // .env — see .env.example.
   appSecret: required('APP_SECRET', 'dev-only-insecure-secret-change-me'),
-  dbPath: process.env.DB_PATH || './data/hik-mgr.sqlite',
+  dbPath: resolveDbPath(),
   hikDefault: hikDefault(),
 };

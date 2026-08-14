@@ -1,0 +1,102 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "install",
+      "type": "shell",
+      "command": "yarn install",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "group": "none"
+    },
+    {
+      "label": "build:shared",
+      "type": "shell",
+      "command": "yarn build:shared",
+      "problemMatcher": ["$tsc"],
+      "presentation": { "reveal": "silent", "panel": "shared" },
+      "group": "build"
+    },
+    {
+      "label": "build",
+      "type": "shell",
+      "command": "yarn build",
+      "problemMatcher": ["$tsc"],
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      // Runs the server (tsx watch) and the Vite dev server together, same
+      // as `yarn dev` on the command line. Used as the background task
+      // behind the "Full Stack: dev (attach browser)" compound launch
+      // config below — its problem matcher's background begin/end
+      // patterns tell VS Code when both are up and it's safe to attach.
+      "label": "dev: all (server+web)",
+      "type": "shell",
+      "command": "yarn dev",
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated", "group": "dev" },
+      "problemMatcher": {
+        "owner": "hik-mgr-dev",
+        "pattern": {
+          "regexp": "^$",
+          "file": 1,
+          "location": 2,
+          "message": 3
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "\\$ (tsx watch|vite)",
+          "endsPattern": "(hik-mgr server listening|ready in \\d+ ms)"
+        }
+      }
+    },
+    {
+      "label": "web: dev",
+      "type": "shell",
+      "command": "yarn workspace @hik-mgr/web dev",
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated", "group": "dev" },
+      "problemMatcher": {
+        "owner": "hik-mgr-web",
+        "pattern": {
+          "regexp": "^$",
+          "file": 1,
+          "location": 2,
+          "message": 3
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "VITE v",
+          "endsPattern": "ready in \\d+ ms"
+        }
+      }
+    },
+    {
+      "label": "docker: up",
+      "type": "shell",
+      "command": "yarn docker:up",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "docker: down",
+      "type": "shell",
+      "command": "yarn docker:down",
+      "problemMatcher": []
+    },
+    {
+      "label": "db: studio",
+      "type": "shell",
+      "command": "yarn db:studio",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "clean",
+      "type": "shell",
+      "command": "yarn clean",
+      "problemMatcher": []
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // F5 target for the API server: runs it directly under Node's
+      // debugger via tsx (no separate compile step, breakpoints work
+      // straight in the .ts sources). Equivalent to
+      // `node --import tsx ./apps/server/src/index.ts`, just with the
+      // debugger attached from the start.
+      "type": "node",
+      "request": "launch",
+      "name": "Debug Server",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--import", "tsx", "./apps/server/src/index.ts"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"],
+      "preLaunchTask": "build:shared",
+      "restart": true
+    },
+    {
+      // Debug an already-running server (e.g. one started with `yarn dev`
+      // in a terminal) instead of launching a new one — handy since
+      // `tsx watch` already restarts on file changes on its own.
+      // Requires the server to actually be started with an inspector
+      // listening; NODE_OPTIONS=--inspect yarn dev, or add --inspect to
+      // the "dev" script's tsx invocation if you use this often.
+      "type": "node",
+      "request": "attach",
+      "name": "Attach to Server (port 9229)",
+      "port": 9229,
+      "restart": true,
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
+    },
+    {
+      // F5 target for the web client: starts the Vite dev server (via the
+      // "web: dev" task) and opens it in a debuggable Chrome instance,
+      // with breakpoints working directly in the .tsx sources.
+      "type": "chrome",
+      "request": "launch",
+      "name": "Launch Web (Chrome)",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/apps/web",
+      "sourceMapPathOverrides": {
+        "webpack:///./~/*": "${webRoot}/node_modules/*",
+        "webpack:///./*": "${webRoot}/*",
+        "webpack:///*": "*"
+      },
+      "preLaunchTask": "web: dev"
+    }
+  ],
+  "compounds": [
+    {
+      // The full F5 experience: API server + web client + browser, all at
+      // once, all debuggable. Pick this in the Run and Debug dropdown
+      // (or make it the first item to have it be F5's default).
+      "name": "Full Stack: Server + Web",
+      "configurations": ["Debug Server", "Launch Web (Chrome)"],
+      "stopAll": true
+    }
+  ]
+}

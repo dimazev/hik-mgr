@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "db:generate": "drizzle-kit generate",
+    "db:studio": "drizzle-kit studio",
+    "rebuild:native": "npm rebuild better-sqlite3 --build-from-source"
   },
   "dependencies": {
     "@hik-mgr/shared": "workspace:*",

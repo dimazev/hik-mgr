@@ -13,7 +13,14 @@
     "build:web": "yarn workspace @hik-mgr/web build",
     "build": "yarn build:shared && yarn build:server && yarn build:web",
     "dev": "yarn build:shared && concurrently -n server,web -c blue,green \"yarn workspace @hik-mgr/server dev\" \"yarn workspace @hik-mgr/web dev\"",
-    "start": "node apps/server/dist/index.js"
+    "start": "node apps/server/dist/index.js",
+    "db:generate": "yarn workspace @hik-mgr/server db:generate",
+    "db:studio": "yarn workspace @hik-mgr/server db:studio",
+    "rebuild:native": "yarn workspace @hik-mgr/server rebuild:native",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up --build",
+    "docker:down": "docker compose down",
+    "clean": "rm -rf apps/server/dist apps/web/dist packages/shared/dist"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

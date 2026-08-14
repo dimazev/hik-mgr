@@ -71,6 +71,50 @@ yarn build
 yarn start   # serves both API and built web client on PORT (default 4000)
 ```
 
+## Scripts
+
+Run from the repo root (`yarn <script>`) unless noted otherwise.
+
+| Script | What it does |
+| --- | --- |
+| `yarn dev` | Build `packages/shared` once, then run the server (`tsx watch`) and Vite dev server concurrently, for local development. |
+| `yarn build` | Build `packages/shared`, then `apps/server`, then `apps/web`, in that order (each depends on the previous). |
+| `yarn build:shared` / `yarn build:server` / `yarn build:web` | Build just one workspace — useful when iterating on a single piece without rebuilding everything. |
+| `yarn start` | Run the already-built server (`node apps/server/dist/index.js`) — serves the API and, once `apps/web` is built, the web client too. Run `yarn build` first. |
+| `yarn db:generate` | Runs `drizzle-kit generate` against `apps/server/src/db/schema.ts` — emits SQL migration files under `apps/server/drizzle/` for review. Not required for this MVP (the server creates its one table itself on startup via an inline `CREATE TABLE IF NOT EXISTS` — see `apps/server/src/db/client.ts`), but useful once schema changes need a real, reviewable migration instead of that inline statement. |
+| `yarn db:studio` | Opens [Drizzle Studio](https://orm.drizzle.team/drizzle-studio/overview), a local web UI for browsing/editing the SQLite database directly — handy for inspecting stored devices without writing SQL by hand. |
+| `yarn docker:build` | `docker compose build` — build the image without starting it. |
+| `yarn docker:up` | `docker compose up --build` — build (if needed) and start the container, logs attached. |
+| `yarn docker:down` | `docker compose down` — stop and remove the container. |
+| `yarn clean` | Remove all three workspaces' `dist/` build output, for a clean rebuild. |
+
+## VS Code: tasks and F5
+
+Open the `hik-mgr` folder in VS Code (not a parent folder — the paths in
+`.vscode/*.json` are relative to it) and:
+
+- **Terminal → Run Task…** exposes every `yarn` script in
+  [Scripts](#scripts) above as a task (`build`, `build:shared`,
+  `dev: all (server+web)`, `web: dev`, `docker: up`, `docker: down`,
+  `db: studio`, `clean`, `install`), so you don't need a separate
+  terminal for them.
+- **F5** (or the Run and Debug panel) offers:
+  - **Debug Server** — runs the API server directly under Node's
+    debugger via `tsx` (breakpoints work straight in the `.ts` sources,
+    no separate compile step). Automatically runs the `build:shared`
+    task first, since the server imports `@hik-mgr/shared`'s built
+    output.
+  - **Launch Web (Chrome)** — starts the Vite dev server (via the
+    `web: dev` task) and opens it in a debuggable Chrome window, with
+    breakpoints working in the `.tsx` sources.
+  - **Full Stack: Server + Web** (a compound of the two above) — the
+    one-press option: hit F5 once and both the server and the web
+    client come up, debugger attached to both.
+  - **Attach to Server (port 9229)** — attach to a server you already
+    started yourself in a terminal (e.g. via `yarn dev`), instead of
+    launching a new one. Needs that process to actually be listening on
+    the debug port, e.g. `NODE_OPTIONS=--inspect yarn dev`.
+
 ## Configuration (`.env`)
 
 | Variable      | Default                    | Notes                                                            |
@@ -112,6 +156,37 @@ All endpoints are under `/api`.
 - `GET /api/devices/:id/files[?track=101&start=...&end=...&max=2000]` — recorded-file search. Without `?track=`, searches every channel `channels` reports (same "search all devices by default" behavior as `hik-connect list-files`), tagging each result with `deviceChannelName`.
 - `GET /api/devices/:id/download?uri=<playbackURI>` — streams the recording straight through to the browser as a file download.
 - `GET /api/devices/:id/snapshot[?track=101]` — one JPEG still frame from that channel's current live view.
+
+## Troubleshooting
+
+### `better-sqlite3` fails to load ("Could not locate the bindings file")
+
+Running locally (not Docker) and the server crashes on startup with a long
+list of paths `bindings.js` tried under `node_modules/better-sqlite3/...`,
+none of which exist? `better-sqlite3` is a native addon — it needs a
+compiled `.node` binary matching your exact Node version, either
+downloaded as a prebuilt binary during install or built from source with
+`node-gyp`. This error means neither happened, almost always because
+Xcode Command Line Tools (which provide the compiler `node-gyp` needs)
+aren't installed, so the from-source build silently produced nothing
+during `yarn install`.
+
+Fix, no Node downgrade needed (this project already avoided the one
+native-module dependency — `net-keepalive` in `hik-connect` — that
+genuinely didn't support newer Node; `better-sqlite3` supports it fine
+once actually built):
+
+```bash
+xcode-select --install   # if you haven't already; installs make/clang/python3
+yarn rebuild:native      # rebuilds better-sqlite3 from source against your Node
+yarn dev                 # or yarn start
+```
+
+If `xcode-select --install` says it's already installed, the rebuild step
+alone is usually enough. This only affects running outside Docker — the
+`Dockerfile` already installs `python3 make g++` on `node:22-alpine`
+before `yarn install`, so `docker compose up --build` builds it correctly
+without any of this.
 
 ## Notes / known limitations of this MVP
 

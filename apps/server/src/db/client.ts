@@ -13,7 +13,7 @@ if (dbDir && dbDir !== '.' && !fs.existsSync(dbDir)) {
 const sqlite = new Database(env.dbPath);
 sqlite.pragma('journal_mode = WAL');
 
-// Minimal inline migration — good enough for this MVP's single table.
+// Minimal inline migration — good enough for this MVP's small schema.
 // For real schema evolution, use `drizzle-kit generate` + a proper
 // migrations runner instead of this ad-hoc CREATE TABLE.
 sqlite.exec(`
@@ -26,6 +26,15 @@ sqlite.exec(`
     username TEXT NOT NULL DEFAULT 'admin',
     password_enc TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS channel_labels (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id INTEGER NOT NULL,
+    channel_id INTEGER NOT NULL,
+    label TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (device_id, channel_id)
   );
 `);
 

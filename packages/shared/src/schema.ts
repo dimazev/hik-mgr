@@ -34,10 +34,21 @@ export interface Device {
 
 export interface Channel {
   id: number;
+  /** Name as reported by the device — not editable, this app can't rename it on the device itself. */
   name: string;
   ip?: string | null;
   online?: boolean | null;
+  /** User-set override, stored locally (see channel_labels table). Null if never set — fall back to `name` for display. */
+  label?: string | null;
 }
+
+/** Body for PUT /api/devices/:id/channels/:channelId/label */
+export const channelLabelInputSchema = z.object({
+  // Empty string clears the custom label (falls back to the device's own
+  // channel name again) rather than storing an empty label forever.
+  label: z.string().max(200),
+});
+export type ChannelLabelInput = z.infer<typeof channelLabelInputSchema>;
 
 export interface RecordingFile {
   trackID: number;

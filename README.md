@@ -218,7 +218,8 @@ a valid login session — see [Authentication](#authentication).
 - `PUT /api/devices/:id` — update any subset of the same fields.
 - `DELETE /api/devices/:id` — remove a device.
 - `GET /api/devices/:id/status` — `{ status, info }` from `/ISAPI/System/status` and `/ISAPI/System/deviceInfo`.
-- `GET /api/devices/:id/channels` — device/channel list (NVR proxy channels, falling back to the box's own video-input channels — same two-endpoint fallback as `hik-connect list-devices`).
+- `GET /api/devices/:id/channels` — device/channel list (NVR proxy channels, falling back to the box's own video-input channels — same two-endpoint fallback as `hik-connect list-devices`), each with `label`: a custom name if one's been set (see below), `null` otherwise.
+- `PUT /api/devices/:id/channels/:channelId/label` — `{ label }` sets a custom display label for that channel, stored locally (not on the device — the ISAPI channel list itself is always fetched live, never cached). An empty `label` clears it, reverting to the device-reported name.
 - `GET /api/devices/:id/files[?track=101&start=...&end=...&max=2000]` — recorded-file search. Without `?track=`, searches every channel `channels` reports (same "search all devices by default" behavior as `hik-connect list-files`), tagging each result with `deviceChannelName`.
 - `GET /api/devices/:id/download?uri=<playbackURI>` — streams the recording straight through to the browser as a file download.
 - `GET /api/devices/:id/snapshot[?track=101]` — one JPEG still frame from that channel's current live view.

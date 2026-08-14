@@ -32,6 +32,11 @@ export const api = {
   deleteDevice: (id: number) => request<void>(`/api/devices/${id}`, { method: 'DELETE' }),
   status: (id: number) => request<{ status: unknown; info: unknown }>(`/api/devices/${id}/status`),
   channels: (id: number) => request<{ source: string; channels: Channel[] }>(`/api/devices/${id}/channels`),
+  updateChannelLabel: (deviceId: number, channelId: number, label: string) =>
+    request<{ channelId: number; label: string | null }>(`/api/devices/${deviceId}/channels/${channelId}/label`, {
+      method: 'PUT',
+      body: JSON.stringify({ label }),
+    }),
   files: (id: number, params: { track?: number; start?: string; end?: string; max?: number } = {}) => {
     const qs = new URLSearchParams();
     if (params.track) qs.set('track', String(params.track));

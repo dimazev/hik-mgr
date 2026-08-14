@@ -1,9 +1,10 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { eq } from 'drizzle-orm';
-import { deviceInputSchema, deviceUpdateSchema, type Device } from '@hik-mgr/shared';
+import { deviceInputSchema, deviceUpdateSchema, channelLabelInputSchema, type Device } from '@hik-mgr/shared';
 import { db } from '../db/client';
 import { devices, type DeviceRow } from '../db/schema';
 import { encryptSecret, decryptSecret } from '../crypto';
+import { getLabelsForDevice, setChannelLabel } from '../db/channelLabels';
 import {
   getDeviceStatus,
   getDeviceInfo,
@@ -151,13 +152,49 @@ router.get(
 router.get(
   '/:id/channels',
   asyncHandler(async (req, res) => {
-    const row = getDeviceRow(Number(req.params.id));
+    const deviceId = Number(req.params.id);
+    const row = getDeviceRow(deviceId);
     if (!row) {
       res.status(404).json({ error: 'Device not found' });
       return;
     }
     const result = await listChannels(toConn(row));
-    res.json(result);
+    // The channel list itself always comes live from the device (nothing
+    // about it is cached) — only the custom label per channel is stored
+    // locally, merged in here by channel id.
+    const labels = getLabelsForDevice(deviceId);
+    res.json({
+      ...result,
+      channels: result.channels.map((ch) => ({
+        ...ch,
+        label: labels.get(Number(ch.id)) ?? null,
+      })),
+    });
+  })
+);
+
+router.put(
+  '/:id/channels/:channelId/label',
+  asyncHandler(async (req, res) => {
+    const deviceId = Number(req.params.id);
+    const channelId = Number(req.params.channelId);
+    const row = getDeviceRow(deviceId);
+    if (!row) {
+      res.status(404).json({ error: 'Device not found' });
+      return;
+    }
+    if (!Number.isFinite(channelId)) {
+      res.status(400).json({ error: 'Invalid channel id' });
+      return;
+    }
+    const parsed = channelLabelInputSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+
+    setChannelLabel(deviceId, channelId, parsed.data.label);
+    res.json({ channelId, label: parsed.data.label.trim() || null });
   })
 );
 

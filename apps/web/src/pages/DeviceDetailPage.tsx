@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, Link as RouterLink } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import Box from '@mui/material/Box';
@@ -13,10 +13,20 @@ import TableCell from '@mui/material/TableCell';
 import TableContainer from '@mui/material/TableContainer';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
-import Button from '@mui/material/Button';
+import TextField from '@mui/material/TextField';
+import InputAdornment from '@mui/material/InputAdornment';
+import IconButton from '@mui/material/IconButton';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
+import Chip from '@mui/material/Chip';
 import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
 import Stack from '@mui/material/Stack';
+import SaveIcon from '@mui/icons-material/Save';
+import SearchIcon from '@mui/icons-material/Search';
+import ViewModuleIcon from '@mui/icons-material/ViewModule';
+import ViewListIcon from '@mui/icons-material/ViewList';
+import type { Channel } from '@hik-mgr/shared';
 import { api } from '../api/client';
 
 function TabPanel({ value, index, children }: { value: number; index: number; children: React.ReactNode }) {
@@ -50,33 +60,224 @@ function StatusTab({ id }: { id: number }) {
   );
 }
 
+/**
+ * Shared editable-label state + save mutation, used by both the grid card
+ * and the list row below so the two views don't duplicate this logic.
+ */
+function useChannelLabelEditor(deviceId: number, channel: Channel) {
+  const queryClient = useQueryClient();
+  const [label, setLabel] = useState(channel.label ?? '');
+
+  // Resync local edit state whenever the saved label changes underneath us
+  // (our own successful save, or a refetch picking up someone else's
+  // change) — cheap since it's just a string compare, and keeps the field
+  // from drifting out of sync with what's actually stored.
+  useEffect(() => {
+    setLabel(channel.label ?? '');
+  }, [channel.label]);
+
+  const dirty = label.trim() !== (channel.label ?? '').trim();
+
+  const saveMutation = useMutation({
+    mutationFn: () => api.updateChannelLabel(deviceId, Number(channel.id), label),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['channels', deviceId] }),
+  });
+
+  return {
+    label,
+    setLabel,
+    dirty,
+    save: () => saveMutation.mutate(),
+    isSaving: saveMutation.isPending,
+    error: saveMutation.isError ? (saveMutation.error as Error).message : null,
+  };
+}
+
+function ChannelCard({ deviceId, channel }: { deviceId: number; channel: Channel }) {
+  const { label, setLabel, dirty, save, isSaving, error } = useChannelLabelEditor(deviceId, channel);
+  const track = Number(channel.id) * 100 + 1;
+  const displayName = channel.label || channel.name;
+
+  return (
+    <Paper sx={{ p: 1.5 }}>
+      <Box
+        component="img"
+        src={api.snapshotUrl(deviceId, track)}
+        alt={`Snapshot of ${displayName}`}
+        sx={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', bgcolor: 'grey.200', borderRadius: 1, mb: 1.5 }}
+      />
+      <Stack direction="row" spacing={1} alignItems="flex-start">
+        <TextField
+          label="Label"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && dirty && !isSaving) save();
+          }}
+          placeholder={channel.name}
+          size="small"
+          fullWidth
+        />
+        <IconButton aria-label="Save label" color="primary" disabled={!dirty || isSaving} onClick={save}>
+          <SaveIcon fontSize="small" />
+        </IconButton>
+      </Stack>
+      <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+        Channel {channel.id} · device name: {channel.name}
+        {channel.ip ? ` · ${channel.ip}` : ''}
+      </Typography>
+      {channel.online !== null && channel.online !== undefined && (
+        <Chip
+          size="small"
+          label={channel.online ? 'Online' : 'Offline'}
+          color={channel.online ? 'success' : 'default'}
+          sx={{ mt: 1 }}
+        />
+      )}
+      {error && (
+        <Alert severity="error" sx={{ mt: 1 }}>
+          {error}
+        </Alert>
+      )}
+    </Paper>
+  );
+}
+
+function ChannelListRow({ deviceId, channel }: { deviceId: number; channel: Channel }) {
+  const { label, setLabel, dirty, save, isSaving, error } = useChannelLabelEditor(deviceId, channel);
+  const track = Number(channel.id) * 100 + 1;
+  const displayName = channel.label || channel.name;
+
+  return (
+    <TableRow>
+      <TableCell sx={{ width: 88 }}>
+        <Box
+          component="img"
+          src={api.snapshotUrl(deviceId, track)}
+          alt={`Snapshot of ${displayName}`}
+          sx={{ width: 72, height: 54, objectFit: 'cover', borderRadius: 1, display: 'block', bgcolor: 'grey.200' }}
+        />
+      </TableCell>
+      <TableCell sx={{ width: 56 }}>{channel.id}</TableCell>
+      <TableCell sx={{ minWidth: 220 }}>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <TextField
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && dirty && !isSaving) save();
+            }}
+            placeholder={channel.name}
+            size="small"
+            variant="standard"
+            fullWidth
+          />
+          <IconButton aria-label="Save label" size="small" color="primary" disabled={!dirty || isSaving} onClick={save}>
+            <SaveIcon fontSize="small" />
+          </IconButton>
+        </Stack>
+        {error && (
+          <Typography variant="caption" color="error" display="block">
+            {error}
+          </Typography>
+        )}
+      </TableCell>
+      <TableCell>{channel.name}</TableCell>
+      <TableCell>{channel.ip ?? '—'}</TableCell>
+      <TableCell>
+        {channel.online === null || channel.online === undefined ? (
+          '—'
+        ) : (
+          <Chip size="small" label={channel.online ? 'Online' : 'Offline'} color={channel.online ? 'success' : 'default'} />
+        )}
+      </TableCell>
+    </TableRow>
+  );
+}
+
 function ChannelsTab({ id }: { id: number }) {
   const q = useQuery({ queryKey: ['channels', id], queryFn: () => api.channels(id) });
+  const [view, setView] = useState<'grid' | 'list'>('grid');
+  const [search, setSearch] = useState('');
+
   if (q.isLoading) return <CircularProgress size={24} />;
   if (q.isError) return <Alert severity="error">{(q.error as Error).message}</Alert>;
+
+  const allChannels = q.data?.channels ?? [];
+  const term = search.trim().toLowerCase();
+  // Searches the effective display name (custom label if set, else the
+  // device's own channel name) — labels are the point, but falling back to
+  // name means a channel that was never labeled is still findable.
+  const channels = term ? allChannels.filter((c) => (c.label || c.name || '').toLowerCase().includes(term)) : allChannels;
+
   return (
-    <TableContainer component={Paper}>
-      <Table size="small">
-        <TableHead>
-          <TableRow>
-            <TableCell>ID</TableCell>
-            <TableCell>Name</TableCell>
-            <TableCell>IP</TableCell>
-            <TableCell>Online</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {(q.data?.channels ?? []).map((c) => (
-            <TableRow key={c.id}>
-              <TableCell>{c.id}</TableCell>
-              <TableCell>{c.name}</TableCell>
-              <TableCell>{c.ip ?? '—'}</TableCell>
-              <TableCell>{c.online === null || c.online === undefined ? '—' : String(c.online)}</TableCell>
-            </TableRow>
+    <Stack spacing={2}>
+      <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
+        <TextField
+          size="small"
+          placeholder="Search by label…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          slotProps={{
+            input: {
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" color="action" />
+                </InputAdornment>
+              ),
+            },
+          }}
+          sx={{ minWidth: 240 }}
+        />
+        <ToggleButtonGroup value={view} exclusive size="small" onChange={(_e, v) => v && setView(v)}>
+          <ToggleButton value="grid" aria-label="Grid view">
+            <ViewModuleIcon fontSize="small" />
+          </ToggleButton>
+          <ToggleButton value="list" aria-label="List view">
+            <ViewListIcon fontSize="small" />
+          </ToggleButton>
+        </ToggleButtonGroup>
+        <Typography variant="body2" color="text.secondary">
+          {channels.length} of {allChannels.length} channel{allChannels.length === 1 ? '' : 's'}
+        </Typography>
+      </Stack>
+
+      {allChannels.length === 0 && <Typography color="text.secondary">No channels reported by this device.</Typography>}
+
+      {allChannels.length > 0 && channels.length === 0 && (
+        <Typography color="text.secondary">No channels match "{search}".</Typography>
+      )}
+
+      {channels.length > 0 && view === 'grid' && (
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 2 }}>
+          {channels.map((c) => (
+            <ChannelCard key={c.id} deviceId={id} channel={c} />
           ))}
-        </TableBody>
-      </Table>
-    </TableContainer>
+        </Box>
+      )}
+
+      {channels.length > 0 && view === 'list' && (
+        <TableContainer component={Paper}>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Snapshot</TableCell>
+                <TableCell>ID</TableCell>
+                <TableCell>Label</TableCell>
+                <TableCell>Device name</TableCell>
+                <TableCell>IP</TableCell>
+                <TableCell>Status</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {channels.map((c) => (
+                <ChannelListRow key={c.id} deviceId={id} channel={c} />
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+    </Stack>
   );
 }
 
@@ -123,30 +324,6 @@ function RecordingsTab({ id }: { id: number }) {
   );
 }
 
-function SnapshotsTab({ id }: { id: number }) {
-  const channelsQuery = useQuery({ queryKey: ['channels', id], queryFn: () => api.channels(id) });
-  const channels = channelsQuery.data?.channels ?? [];
-  const tracks = channels.length > 0 ? channels.map((c) => Number(c.id) * 100 + 1) : [101];
-
-  return (
-    <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 2 }}>
-      {tracks.map((track) => (
-        <Paper key={track} sx={{ p: 1 }}>
-          <Typography variant="caption" display="block" gutterBottom>
-            Track {track}
-          </Typography>
-          <Box
-            component="img"
-            src={api.snapshotUrl(id, track)}
-            alt={`Snapshot track ${track}`}
-            sx={{ width: '100%', display: 'block', bgcolor: 'grey.200' }}
-          />
-        </Paper>
-      ))}
-    </Box>
-  );
-}
-
 export default function DeviceDetailPage() {
   const { id } = useParams();
   const deviceId = Number(id);
@@ -164,7 +341,6 @@ export default function DeviceDetailPage() {
         <Tab label="Status" />
         <Tab label="Channels" />
         <Tab label="Recordings" />
-        <Tab label="Snapshots" />
       </Tabs>
       <TabPanel value={tab} index={0}>
         <StatusTab id={deviceId} />
@@ -174,9 +350,6 @@ export default function DeviceDetailPage() {
       </TabPanel>
       <TabPanel value={tab} index={2}>
         <RecordingsTab id={deviceId} />
-      </TabPanel>
-      <TabPanel value={tab} index={3}>
-        <SnapshotsTab id={deviceId} />
       </TabPanel>
     </Stack>
   );

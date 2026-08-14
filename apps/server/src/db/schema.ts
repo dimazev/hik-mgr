@@ -71,7 +71,7 @@ export type RecordingHistoryRow = typeof recordingHistory.$inferSelect;
 export const downloadTasks = sqliteTable('download_tasks', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   deviceId: integer('device_id').notNull(),
-  status: text('status', { enum: ['pending', 'running', 'completed', 'failed', 'cancelled'] })
+  status: text('status', { enum: ['pending', 'running', 'completed', 'failed', 'cancelled', 'interrupted'] })
     .notNull()
     .default('pending'),
   totalFiles: integer('total_files').notNull().default(0),

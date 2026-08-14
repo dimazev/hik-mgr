@@ -13,6 +13,7 @@
 
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import type { Readable } from 'node:stream';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 import AxiosDigestAuth from '@mhoc/axios-digest-auth';
 import { XMLParser } from 'fast-xml-parser';
@@ -173,7 +174,7 @@ export async function downloadRecording(
     // call .destroy() to abort mid-file instead of only being able to
     // stop *between* files. Optional — nothing here depends on it being
     // used.
-    onStreamStart?: (stream: NodeJS.ReadableStream) => void;
+    onStreamStart?: (stream: Readable) => void;
     // Fired once, right after the device's response headers arrive, with
     // whether a resume was actually possible. `attempted` is true whenever
     // there were existing bytes on disk to try resuming from; `honored`
@@ -263,7 +264,7 @@ export async function downloadRecording(
 export async function streamRecordingToResponse(
   conn: DeviceConn,
   playbackURI: string
-): Promise<{ stream: NodeJS.ReadableStream; headers: Record<string, unknown> }> {
+): Promise<{ stream: Readable; headers: Record<string, unknown> }> {
   const body = `<?xml version="1.0" encoding="UTF-8"?>
 <downloadRequest>
   <playbackURI>${escapeXml(playbackURI)}</playbackURI>

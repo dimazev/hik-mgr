@@ -1,5 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
+import type { Readable } from 'node:stream';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { downloadRecording, type DeviceConn, type DownloadProgress } from './hik/isapi';
 import { convertVideo, type ConvertProgress } from './videoConvert';
@@ -28,7 +29,7 @@ function formatEta(seconds: number): string {
 
 interface ActiveTask {
   cancelRequested: boolean;
-  activeStream?: NodeJS.ReadableStream;
+  activeStream?: Readable;
   activeConvertProcess?: ChildProcessWithoutNullStreams;
 }
 

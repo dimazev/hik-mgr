@@ -42,47 +42,31 @@ services:
       # better-sqlite3 are compiled per-OS/arch — a macOS build won't load
       # inside this Linux container.
       #
-      # One named volume (`node_modules_cache`, declared at the bottom of
-      # this file) backs all four node_modules locations this workspace
-      # needs, each isolated via a distinct `subpath` — so root,
-      # packages/shared, apps/server, and apps/web each get their own
-      # subfolder within that single volume instead of colliding. This
-      # needs Docker Engine 25+ / a reasonably current Docker
-      # Desktop for the `subpath` field — if `docker compose up` rejects
-      # it as an unknown option, upgrade Docker Desktop, or fall back to
-      # four separate anonymous volume entries (`/app/node_modules`,
-      # `/app/packages/shared/node_modules`, etc., one per line) instead.
+      # One named volume (`node_modules_cache`) mounted at a single path
+      # outside the source tree, /node_modules-cache — bootstrap.sh then
+      # symlinks each of the four node_modules locations this workspace
+      # needs (root, packages/shared, apps/server, apps/web) into its own
+      # subfolder there. This is the "one volume, several subfolders"
+      # shape, done via symlinks rather than Docker's `subpath` mount
+      # option: `subpath` requires the target subfolder to already exist
+      # *inside* the volume before mounting, which a fresh volume doesn't
+      # have on its first use — it doesn't get auto-created the way a
+      # plain top-level mount does, so `docker compose up` failed with
+      # "no such file or directory" the first time this container tried
+      # to start. Symlinks avoid that: bootstrap.sh creates the subfolders
+      # itself with a plain `mkdir -p`, which works unconditionally.
       #
       # This used to be `tmpfs` instead, on the theory that RAM-backed
       # mounts don't persist across a restart the way a volume does — but
       # tmpfs turned out to break yarn install outright: some Docker
       # setups mount tmpfs `noexec`, and yarn needs to execute the
       # binaries it just installed (esbuild, etc.) to verify them, which
-      # failed with EACCES. A regular named/anonymous volume doesn't have
-      # that restriction, so "don't persist across restarts" is instead
+      # failed with EACCES. A regular named volume doesn't have that
+      # restriction, so "don't persist across restarts" is instead
       # enforced explicitly in bootstrap.sh (which empties these
       # directories before every yarn install) rather than relying on the
       # mount type itself to provide that.
-      - type: volume
-        source: node_modules_cache
-        target: /app/node_modules
-        volume:
-          subpath: root
-      - type: volume
-        source: node_modules_cache
-        target: /app/packages/shared/node_modules
-        volume:
-          subpath: shared
-      - type: volume
-        source: node_modules_cache
-        target: /app/apps/server/node_modules
-        volume:
-          subpath: server
-      - type: volume
-        source: node_modules_cache
-        target: /app/apps/web/node_modules
-        volume:
-          subpath: web
+      - node_modules_cache:/node_modules-cache
       - ./data:/app/data
     restart: unless-stopped
 

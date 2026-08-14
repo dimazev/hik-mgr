@@ -45,11 +45,12 @@ on the host (bind-mounted into the container).
 
 ## Running locally without Docker
 
-Requires Node 22+ (the app itself has no Node-version-specific native
-dependency beyond `better-sqlite3`, which has prebuilt binaries for
-current LTS releases — Docker pins `node:22-alpine` for a known-good
-build environment, independent of whatever Node version you have on your
-host).
+Requires Node 22+. `better-sqlite3` is pinned to `~12.10.0` specifically
+because it's a version confirmed to build correctly against very new Node
+releases (see [Troubleshooting](#troubleshooting) if you ever hit a
+compile error here) — don't loosen that pin without checking. Docker pins
+`node:22-alpine` for a known-good build environment, independent of
+whatever Node version you have on your host.
 
 ```bash
 corepack enable   # if you don't already have yarn 4 available
@@ -159,34 +160,40 @@ All endpoints are under `/api`.
 
 ## Troubleshooting
 
-### `better-sqlite3` fails to load ("Could not locate the bindings file")
+### `better-sqlite3` fails to load or fails to compile
 
-Running locally (not Docker) and the server crashes on startup with a long
-list of paths `bindings.js` tried under `node_modules/better-sqlite3/...`,
-none of which exist? `better-sqlite3` is a native addon — it needs a
-compiled `.node` binary matching your exact Node version, either
-downloaded as a prebuilt binary during install or built from source with
-`node-gyp`. This error means neither happened, almost always because
-Xcode Command Line Tools (which provide the compiler `node-gyp` needs)
-aren't installed, so the from-source build silently produced nothing
-during `yarn install`.
+Running locally (not Docker) and the server crashes with either a
+"Could not locate the bindings file" error listing a long list of tried
+paths, or a `node-gyp`/`gyp ERR!` compile error (possibly mentioning a
+removed V8 API, e.g. `no member named 'This' in
+'v8::PropertyCallbackInfo<v8::Value>'`)?
 
-Fix, no Node downgrade needed (this project already avoided the one
-native-module dependency — `net-keepalive` in `hik-connect` — that
-genuinely didn't support newer Node; `better-sqlite3` supports it fine
-once actually built):
+That specific compile error means the installed `better-sqlite3` version
+is too old for your Node's V8 — this isn't a missing-tool or
+wrong-Node-version problem, it's a real incompatibility between that
+addon release and a newer V8. `better-sqlite3` is pinned to `~12.10.0` in
+`apps/server/package.json` specifically because that version is confirmed
+to build correctly on very new Node releases (verified working in another
+project on this same machine). If you've somehow ended up on an older
+`11.x` (e.g. a stale lockfile), that's very likely the cause:
 
 ```bash
-xcode-select --install   # if you haven't already; installs make/clang/python3
-yarn rebuild:native      # rebuilds better-sqlite3 from source against your Node
-yarn dev                 # or yarn start
+yarn install                       # picks up the ~12.10.0 pin
+yarn rebuild:native                # if still needed: rebuilds from source
+yarn dev
 ```
 
-If `xcode-select --install` says it's already installed, the rebuild step
-alone is usually enough. This only affects running outside Docker — the
-`Dockerfile` already installs `python3 make g++` on `node:22-alpine`
-before `yarn install`, so `docker compose up --build` builds it correctly
-without any of this.
+If you're already on `~12.10.0` and it's still failing, first make sure
+Xcode Command Line Tools are installed (`xcode-select -p` should print a
+path; if not, `xcode-select --install`), then run
+`yarn rebuild:native` (`npm rebuild better-sqlite3 --build-from-source`
+under the hood) to force a fresh from-source build against your exact
+Node, rather than relying on a prebuilt binary that might not exist yet
+for a brand-new Node release.
+
+This only affects running outside Docker — the `Dockerfile` already
+installs `python3 make g++` on `node:22-alpine` before `yarn install`, so
+`docker compose up --build` isn't affected either way.
 
 ## Notes / known limitations of this MVP
 

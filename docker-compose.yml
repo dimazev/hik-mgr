@@ -7,6 +7,22 @@ services:
       PORT: 4000
       APP_SECRET: ${APP_SECRET:?Set APP_SECRET in .env}
       DB_PATH: /app/data/hik-mgr.sqlite
+      # .env itself is excluded from the image (see .dockerignore), so
+      # anything the app needs at runtime has to be passed through
+      # explicitly here — Compose fills in ${...} from the root .env file
+      # automatically. Without these, the container silently fell back to
+      # the built-in insecure defaults in env.ts instead of what's in .env.
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      # Optional one-time device seed — safe to leave unset in .env, in
+      # which case these all resolve to empty strings and seeding is
+      # skipped (see hikDefault() in env.ts).
+      HIK_NAME: ${HIK_NAME:-}
+      HIK_HOST: ${HIK_HOST:-}
+      HIK_PORT: ${HIK_PORT:-}
+      HIK_PROTOCOL: ${HIK_PROTOCOL:-}
+      HIK_USERNAME: ${HIK_USERNAME:-}
+      HIK_PASSWORD: ${HIK_PASSWORD:-}
     volumes:
       - ./data:/app/data
     restart: unless-stopped

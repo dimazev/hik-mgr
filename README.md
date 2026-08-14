@@ -43,6 +43,24 @@ Then open http://localhost:4000 — the server serves both the API
 (`/api/...`) and the built web client. Device data persists in `./data/`
 on the host (bind-mounted into the container).
 
+**The image ships source only — `node_modules` is never baked in.**
+`bootstrap.sh` runs `yarn install` and the full `yarn build` (shared →
+server → web) itself, once, every time a container actually starts (see
+`Dockerfile` / `bootstrap.sh` at the repo root). That means every start
+does a real first-time-style install, so expect the container to sit on
+"installing dependencies..." / "building shared -> server -> web..." in
+`docker compose logs -f` for a while before "starting server..." — this
+is normal, not a hang. The tradeoff is deliberate: it guarantees
+`better-sqlite3` (and any other native module) is always compiled fresh
+against the exact Node/OS/arch the container is actually running on,
+instead of risking a precompiled binary that was baked into the image
+under a slightly different environment. If you'd rather trade that
+guarantee for a faster restart, you can mount a named volume over
+`/app/node_modules` in `docker-compose.yml` so installed packages persist
+across `docker compose up`/`down` (though not across `--build`, since
+that recreates the image and, if you're not using a volume, the
+container's writable layer with it).
+
 ## Running locally without Docker
 
 Requires Node 22+ and **ffmpeg on your PATH** (`ffmpeg -version` should

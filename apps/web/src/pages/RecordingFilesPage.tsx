@@ -23,6 +23,7 @@ import DialogActions from '@mui/material/DialogActions';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import type { DownloadTaskFileInput } from '@hik-mgr/shared';
 import { api } from '../api/client';
+import { useLocale } from '../i18n/LocaleContext';
 
 function sanitizeForFilename(s: string): string {
   return s.replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'channel';
@@ -39,10 +40,10 @@ function friendlyFileName(channelName: string | null | undefined, startTime: str
   return `${sanitizeForFilename(channelName || 'channel')}_${start}.mp4`;
 }
 
-function formatDateTime(iso: string): string {
+function formatDateTime(iso: string, locale: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString(locale, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 /**
@@ -59,6 +60,7 @@ function formatDateTime(iso: string): string {
  * rather than as individual browser downloads.
  */
 export default function RecordingFilesPage() {
+  const { t, locale } = useLocale();
   const { id } = useParams();
   const deviceId = Number(id);
   const [searchParams] = useSearchParams();
@@ -110,24 +112,24 @@ export default function RecordingFilesPage() {
     <Stack spacing={2}>
       <Box>
         <Link component={RouterLink} to={`/devices/${deviceId}`} underline="hover">
-          ← Back to device
+          {t('recordingFiles.backToDevice')}
         </Link>
       </Box>
-      <Typography variant="h5">Recording files</Typography>
+      <Typography variant="h5">{t('recordingFiles.title')}</Typography>
 
       {start && end ? (
         <Typography variant="body2" color="text.secondary">
-          {formatDateTime(start)} – {formatDateTime(end)}
+          {formatDateTime(start, locale)} – {formatDateTime(end, locale)}
         </Typography>
       ) : (
-        <Alert severity="warning">Missing start/end time — go back to the Recordings tab and search again.</Alert>
+        <Alert severity="warning">{t('recordingFiles.missingRange')}</Alert>
       )}
 
       {q.isLoading && (
         <Stack direction="row" spacing={1} alignItems="center">
           <CircularProgress size={18} />
           <Typography variant="body2" color="text.secondary">
-            Loading files…
+            {t('recordingFiles.loading')}
           </Typography>
         </Stack>
       )}
@@ -140,11 +142,11 @@ export default function RecordingFilesPage() {
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>Channel</TableCell>
-                  <TableCell>File name</TableCell>
-                  <TableCell>Start</TableCell>
-                  <TableCell>End</TableCell>
-                  <TableCell>Size</TableCell>
+                  <TableCell>{t('recordings.colChannel')}</TableCell>
+                  <TableCell>{t('recordingFiles.colFileName')}</TableCell>
+                  <TableCell>{t('recordings.start')}</TableCell>
+                  <TableCell>{t('recordings.end')}</TableCell>
+                  <TableCell>{t('recordingFiles.colSize')}</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -160,7 +162,7 @@ export default function RecordingFilesPage() {
                 {files.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={5}>
-                      <Typography color="text.secondary">No recordings found in range.</Typography>
+                      <Typography color="text.secondary">{t('recordingFiles.noneInRange')}</Typography>
                     </TableCell>
                   </TableRow>
                 )}
@@ -177,7 +179,7 @@ export default function RecordingFilesPage() {
                 onClick={() => setConfirmOpen(true)}
                 disabled={createTaskMutation.isPending}
               >
-                {createTaskMutation.isPending ? 'Starting…' : `Download (${files.length})`}
+                {createTaskMutation.isPending ? t('recordingFiles.starting') : t('recordingFiles.downloadCount', { count: files.length })}
               </Button>
             </Box>
           )}
@@ -188,19 +190,22 @@ export default function RecordingFilesPage() {
 
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
         <DialogTitle>
-          Download {files.length} file{files.length === 1 ? '' : 's'}?
+          {t(files.length === 1 ? 'recordingFiles.confirmTitleOne' : 'recordingFiles.confirmTitleOther', { count: files.length })}
         </DialogTitle>
         <DialogContent>
           <DialogContentText>
-            This queues {files.length} file{files.length === 1 ? '' : 's'} from {channelNames.size} channel
-            {channelNames.size === 1 ? '' : 's'} as a background download task. The server downloads them one at a
-            time — track progress on the Tasks page.
+            {t('recordingFiles.confirmBody', {
+              count: files.length,
+              fileWord: t(files.length === 1 ? 'common.file' : 'common.files'),
+              channelCount: channelNames.size,
+              channelWord: t(channelNames.size === 1 ? 'common.channel' : 'common.channels'),
+            })}
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setConfirmOpen(false)}>Cancel</Button>
+          <Button onClick={() => setConfirmOpen(false)}>{t('devices.cancel')}</Button>
           <Button variant="contained" onClick={handleConfirmDownload} disabled={createTaskMutation.isPending}>
-            Download
+            {t('recordingFiles.download')}
           </Button>
         </DialogActions>
       </Dialog>

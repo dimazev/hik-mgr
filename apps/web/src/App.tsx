@@ -8,6 +8,8 @@ import Container from '@mui/material/Container';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import VideocamIcon from '@mui/icons-material/Videocam';
 import LogoutIcon from '@mui/icons-material/Logout';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -17,9 +19,32 @@ import RecordingFilesPage from './pages/RecordingFilesPage';
 import TasksPage from './pages/TasksPage';
 import LoginPage from './pages/LoginPage';
 import { api } from './api/client';
+import { useLocale } from './i18n/LocaleContext';
+
+/** EN/HE toggle in the top bar — switches LocaleContext, which drives both translated text and the RTL/LTR theme direction (see main.tsx). */
+function LanguageSwitcher() {
+  const { locale, setLocale } = useLocale();
+  return (
+    <ToggleButtonGroup
+      value={locale}
+      exclusive
+      size="small"
+      onChange={(_e, next) => next && setLocale(next)}
+      sx={{ mx: 2, bgcolor: 'rgba(255,255,255,0.15)', '& .MuiToggleButton-root': { color: 'inherit', px: 1.25, py: 0.25 } }}
+    >
+      <ToggleButton value="he" aria-label="Hebrew">
+        עב
+      </ToggleButton>
+      <ToggleButton value="en" aria-label="English">
+        EN
+      </ToggleButton>
+    </ToggleButtonGroup>
+  );
+}
 
 export default function App() {
   const queryClient = useQueryClient();
+  const { t } = useLocale();
   const meQuery = useQuery({ queryKey: ['me'], queryFn: api.auth.me, retry: false });
 
   // Any API call anywhere in the app that comes back 401 (session expired,
@@ -62,16 +87,17 @@ export default function App() {
             to="/"
             sx={{ flexGrow: 1, textDecoration: 'none', color: 'inherit' }}
           >
-            hik-mgr
+            {t('app.title')}
           </Typography>
-          <Button color="inherit" size="small" startIcon={<DownloadIcon />} component={Link} to="/tasks" sx={{ mr: 2 }}>
-            Tasks
+          <Button color="inherit" size="small" startIcon={<DownloadIcon />} component={Link} to="/tasks" sx={{ mr: 1 }}>
+            {t('app.tasks')}
           </Button>
+          <LanguageSwitcher />
           <Typography variant="body2" sx={{ mr: 2, opacity: 0.85 }}>
             {meQuery.data.username}
           </Typography>
           <Button color="inherit" size="small" startIcon={<LogoutIcon />} onClick={handleLogout}>
-            Logout
+            {t('app.logout')}
           </Button>
         </Toolbar>
       </AppBar>

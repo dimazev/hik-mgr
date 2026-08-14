@@ -35,18 +35,19 @@ import VideoLibraryIcon from '@mui/icons-material/VideoLibrary';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import type { Channel } from '@hik-mgr/shared';
 import { api } from '../api/client';
+import { useLocale } from '../i18n/LocaleContext';
 
-function formatSince(iso: string): string {
+function formatSince(iso: string, locale: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  return d.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 /** Formats an ISO timestamp for display in the search summary line. */
-function formatDateTime(iso: string): string {
+function formatDateTime(iso: string, locale: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString(locale, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 const SNAPSHOT_MAX_ATTEMPTS = 3;
@@ -142,6 +143,7 @@ function SnapshotImage({
   showRefresh?: boolean;
 }) {
   const { url, error, loading, refresh } = useSnapshot(deviceId, track);
+  const { t } = useLocale();
 
   return (
     <Box sx={{ position: 'relative', overflow: 'hidden', bgcolor: 'grey.200', ...sx }}>
@@ -153,13 +155,13 @@ function SnapshotImage({
             <CircularProgress size={18} />
           ) : (
             <Typography variant="caption" color="text.secondary">
-              No snapshot
+              {t('snapshot.noSnapshot')}
             </Typography>
           )}
         </Box>
       )}
       {error && (
-        <Tooltip title={`Snapshot refresh failed, showing the last successful one. ${error}`}>
+        <Tooltip title={t('snapshot.errorTooltip', { error })}>
           <WarningAmberIcon
             fontSize="small"
             color="warning"
@@ -169,7 +171,7 @@ function SnapshotImage({
       )}
       {showRefresh && (
         <IconButton
-          aria-label="Refresh snapshot"
+          aria-label={t('snapshot.refreshAria')}
           size="small"
           onClick={refresh}
           disabled={loading}
@@ -194,6 +196,7 @@ function TabPanel({ value, index, children }: { value: number; index: number; ch
 }
 
 function StatusTab({ id }: { id: number }) {
+  const { t } = useLocale();
   const q = useQuery({ queryKey: ['status', id], queryFn: () => api.status(id) });
   if (q.isLoading) return <CircularProgress size={24} />;
   if (q.isError) return <Alert severity="error">{(q.error as Error).message}</Alert>;
@@ -201,7 +204,7 @@ function StatusTab({ id }: { id: number }) {
     <Stack spacing={2}>
       <Paper sx={{ p: 2 }}>
         <Typography variant="subtitle2" gutterBottom>
-          Status
+          {t('deviceDetail.tabStatus')}
         </Typography>
         <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: 12 }}>
           {JSON.stringify(q.data?.status, null, 2)}
@@ -209,7 +212,7 @@ function StatusTab({ id }: { id: number }) {
       </Paper>
       <Paper sx={{ p: 2 }}>
         <Typography variant="subtitle2" gutterBottom>
-          Device info
+          {t('status.deviceInfo')}
         </Typography>
         <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: 12 }}>
           {JSON.stringify(q.data?.info, null, 2)}
@@ -287,6 +290,7 @@ function useRecordingHistory(deviceId: number, channelId: number) {
 
 function RecordingHistoryLine({ deviceId, channel }: { deviceId: number; channel: Channel }) {
   const { summary, loading, error, refresh } = useRecordingHistory(deviceId, Number(channel.id));
+  const { t, locale } = useLocale();
 
   return (
     <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mt: 1 }}>
@@ -295,7 +299,7 @@ function RecordingHistoryLine({ deviceId, channel }: { deviceId: number; channel
         <>
           <CircularProgress size={12} />
           <Typography variant="caption" color="text.secondary">
-            Scanning recording history…
+            {t('recordingHistory.scanning')}
           </Typography>
         </>
       ) : error && !summary ? (
@@ -305,18 +309,19 @@ function RecordingHistoryLine({ deviceId, channel }: { deviceId: number; channel
       ) : summary ? (
         <Typography variant="caption" color="text.secondary">
           {summary.fileCount === 0
-            ? 'No recordings found'
-            : `Recordings since ${summary.earliestStart ? formatSince(summary.earliestStart) : 'unknown'} · ${
-                summary.fileCount
-              }${summary.truncated ? '+' : ''} file${summary.fileCount === 1 ? '' : 's'}`}
+            ? t('recordingHistory.none')
+            : t(summary.fileCount === 1 ? 'recordingHistory.summaryOne' : 'recordingHistory.summaryOther', {
+                since: summary.earliestStart ? formatSince(summary.earliestStart, locale) : t('recordingHistory.unknown'),
+                count: `${summary.fileCount}${summary.truncated ? '+' : ''}`,
+              })}
         </Typography>
       ) : (
         <Typography variant="caption" color="text.secondary">
-          Recording history unavailable
+          {t('recordingHistory.unavailable')}
         </Typography>
       )}
-      <Tooltip title="Rescan device for recording history">
-        <IconButton aria-label="Refresh recording history" size="small" onClick={refresh} disabled={loading}>
+      <Tooltip title={t('recordingHistory.rescanTooltip')}>
+        <IconButton aria-label={t('recordingHistory.refreshAria')} size="small" onClick={refresh} disabled={loading}>
           <RefreshIcon sx={{ fontSize: 14 }} />
         </IconButton>
       </Tooltip>
@@ -326,6 +331,7 @@ function RecordingHistoryLine({ deviceId, channel }: { deviceId: number; channel
 
 function ChannelCard({ deviceId, channel }: { deviceId: number; channel: Channel }) {
   const { label, setLabel, dirty, save, isSaving, error } = useChannelLabelEditor(deviceId, channel);
+  const { t } = useLocale();
   const track = Number(channel.id) * 100 + 1;
   const displayName = channel.label || channel.name;
 
@@ -339,7 +345,7 @@ function ChannelCard({ deviceId, channel }: { deviceId: number; channel: Channel
       />
       <Stack direction="row" spacing={1} alignItems="flex-start">
         <TextField
-          label="Label"
+          label={t('channel.label')}
           value={label}
           onChange={(e) => setLabel(e.target.value)}
           onKeyDown={(e) => {
@@ -349,18 +355,18 @@ function ChannelCard({ deviceId, channel }: { deviceId: number; channel: Channel
           size="small"
           fullWidth
         />
-        <IconButton aria-label="Save label" color="primary" disabled={!dirty || isSaving} onClick={save}>
+        <IconButton aria-label={t('channel.saveLabelAria')} color="primary" disabled={!dirty || isSaving} onClick={save}>
           <SaveIcon fontSize="small" />
         </IconButton>
       </Stack>
       <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
-        Channel {channel.id} · device name: {channel.name}
+        {t('channel.meta', { id: channel.id, name: channel.name })}
         {channel.ip ? ` · ${channel.ip}` : ''}
       </Typography>
       {channel.online !== null && channel.online !== undefined && (
         <Chip
           size="small"
-          label={channel.online ? 'Online' : 'Offline'}
+          label={channel.online ? t('channel.online') : t('channel.offline')}
           color={channel.online ? 'success' : 'default'}
           sx={{ mt: 1 }}
         />
@@ -377,6 +383,7 @@ function ChannelCard({ deviceId, channel }: { deviceId: number; channel: Channel
 
 function ChannelListRow({ deviceId, channel }: { deviceId: number; channel: Channel }) {
   const { label, setLabel, dirty, save, isSaving, error } = useChannelLabelEditor(deviceId, channel);
+  const { t } = useLocale();
   const track = Number(channel.id) * 100 + 1;
   const displayName = channel.label || channel.name;
 
@@ -405,7 +412,7 @@ function ChannelListRow({ deviceId, channel }: { deviceId: number; channel: Chan
             variant="standard"
             fullWidth
           />
-          <IconButton aria-label="Save label" size="small" color="primary" disabled={!dirty || isSaving} onClick={save}>
+          <IconButton aria-label={t('channel.saveLabelAria')} size="small" color="primary" disabled={!dirty || isSaving} onClick={save}>
             <SaveIcon fontSize="small" />
           </IconButton>
         </Stack>
@@ -421,7 +428,11 @@ function ChannelListRow({ deviceId, channel }: { deviceId: number; channel: Chan
         {channel.online === null || channel.online === undefined ? (
           '—'
         ) : (
-          <Chip size="small" label={channel.online ? 'Online' : 'Offline'} color={channel.online ? 'success' : 'default'} />
+          <Chip
+            size="small"
+            label={channel.online ? t('channel.online') : t('channel.offline')}
+            color={channel.online ? 'success' : 'default'}
+          />
         )}
       </TableCell>
       <TableCell sx={{ minWidth: 220 }}>
@@ -432,6 +443,7 @@ function ChannelListRow({ deviceId, channel }: { deviceId: number; channel: Chan
 }
 
 function ChannelsTab({ id }: { id: number }) {
+  const { t } = useLocale();
   const q = useQuery({ queryKey: ['channels', id], queryFn: () => api.channels(id) });
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [search, setSearch] = useState('');
@@ -451,7 +463,7 @@ function ChannelsTab({ id }: { id: number }) {
       <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
         <TextField
           size="small"
-          placeholder="Search by label…"
+          placeholder={t('channels.searchPlaceholder')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           slotProps={{
@@ -466,22 +478,25 @@ function ChannelsTab({ id }: { id: number }) {
           sx={{ minWidth: 240 }}
         />
         <ToggleButtonGroup value={view} exclusive size="small" onChange={(_e, v) => v && setView(v)}>
-          <ToggleButton value="grid" aria-label="Grid view">
+          <ToggleButton value="grid" aria-label={t('channels.gridViewAria')}>
             <ViewModuleIcon fontSize="small" />
           </ToggleButton>
-          <ToggleButton value="list" aria-label="List view">
+          <ToggleButton value="list" aria-label={t('channels.listViewAria')}>
             <ViewListIcon fontSize="small" />
           </ToggleButton>
         </ToggleButtonGroup>
         <Typography variant="body2" color="text.secondary">
-          {channels.length} of {allChannels.length} channel{allChannels.length === 1 ? '' : 's'}
+          {t(allChannels.length === 1 ? 'channels.countOne' : 'channels.countOther', {
+            shown: channels.length,
+            total: allChannels.length,
+          })}
         </Typography>
       </Stack>
 
-      {allChannels.length === 0 && <Typography color="text.secondary">No channels reported by this device.</Typography>}
+      {allChannels.length === 0 && <Typography color="text.secondary">{t('channels.none')}</Typography>}
 
       {allChannels.length > 0 && channels.length === 0 && (
-        <Typography color="text.secondary">No channels match "{search}".</Typography>
+        <Typography color="text.secondary">{t('channels.noMatch', { search })}</Typography>
       )}
 
       {channels.length > 0 && view === 'grid' && (
@@ -497,13 +512,13 @@ function ChannelsTab({ id }: { id: number }) {
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>Snapshot</TableCell>
-                <TableCell>ID</TableCell>
-                <TableCell>Label</TableCell>
-                <TableCell>Device name</TableCell>
-                <TableCell>IP</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Recordings</TableCell>
+                <TableCell>{t('channels.colSnapshot')}</TableCell>
+                <TableCell>{t('channels.colId')}</TableCell>
+                <TableCell>{t('channel.label')}</TableCell>
+                <TableCell>{t('channels.colDeviceName')}</TableCell>
+                <TableCell>{t('channels.colIp')}</TableCell>
+                <TableCell>{t('deviceDetail.tabStatus')}</TableCell>
+                <TableCell>{t('deviceDetail.tabRecordings')}</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -532,6 +547,7 @@ function ChannelsTab({ id }: { id: number }) {
  * generated file name, each with its own download link.
  */
 function RecordingsTab({ id }: { id: number }) {
+  const { t, locale } = useLocale();
   const navigate = useNavigate();
   const [startInput, setStartInput] = useState('');
   const [endInput, setEndInput] = useState('');
@@ -594,7 +610,7 @@ function RecordingsTab({ id }: { id: number }) {
     <Stack spacing={2}>
       <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
         <TextField
-          label="Start"
+          label={t('recordings.start')}
           type="datetime-local"
           size="small"
           value={startInput}
@@ -602,7 +618,7 @@ function RecordingsTab({ id }: { id: number }) {
           slotProps={{ inputLabel: { shrink: true } }}
         />
         <TextField
-          label="End"
+          label={t('recordings.end')}
           type="datetime-local"
           size="small"
           value={endInput}
@@ -610,19 +626,19 @@ function RecordingsTab({ id }: { id: number }) {
           slotProps={{ inputLabel: { shrink: true } }}
         />
         <Button variant="contained" size="small" onClick={handleSearch} disabled={!canSearch || q.isFetching}>
-          Search
+          {t('recordings.search')}
         </Button>
       </Stack>
 
       {allChannels.length > 0 && (
         <Paper variant="outlined" sx={{ p: 1.5 }}>
           <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
-            <Typography variant="subtitle2">Channels</Typography>
+            <Typography variant="subtitle2">{t('recordings.channelsHeading')}</Typography>
             <Button size="small" onClick={toggleAllChannels}>
-              {selectedCount === allChannels.length ? 'Deselect all' : 'Select all'}
+              {selectedCount === allChannels.length ? t('recordings.deselectAll') : t('recordings.selectAll')}
             </Button>
             <Typography variant="caption" color="text.secondary">
-              {selectedCount} of {allChannels.length} selected
+              {t('recordings.selectedCount', { selected: selectedCount, total: allChannels.length })}
             </Typography>
           </Stack>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
@@ -649,7 +665,7 @@ function RecordingsTab({ id }: { id: number }) {
         <Stack direction="row" spacing={1} alignItems="center">
           <CircularProgress size={18} />
           <Typography variant="body2" color="text.secondary">
-            Scanning channels for recordings…
+            {t('recordings.scanning')}
           </Typography>
         </Stack>
       )}
@@ -659,15 +675,18 @@ function RecordingsTab({ id }: { id: number }) {
       {range && q.isSuccess && (
         <Stack spacing={1.5}>
           <Typography variant="subtitle2">
-            {files.length} file{files.length === 1 ? '' : 's'} found between {formatDateTime(range.start)} and{' '}
-            {formatDateTime(range.end)}
+            {t(files.length === 1 ? 'recordings.foundOne' : 'recordings.foundOther', {
+              count: files.length,
+              start: formatDateTime(range.start, locale),
+              end: formatDateTime(range.end, locale),
+            })}
           </Typography>
           <TableContainer component={Paper}>
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>Channel</TableCell>
-                  <TableCell align="right">Files</TableCell>
+                  <TableCell>{t('recordings.colChannel')}</TableCell>
+                  <TableCell align="right">{t('recordings.colFiles')}</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -680,7 +699,7 @@ function RecordingsTab({ id }: { id: number }) {
                 {counts.size === 0 && (
                   <TableRow>
                     <TableCell colSpan={2}>
-                      <Typography color="text.secondary">No recordings found in this period.</Typography>
+                      <Typography color="text.secondary">{t('recordings.noneInPeriod')}</Typography>
                     </TableCell>
                   </TableRow>
                 )}
@@ -695,7 +714,7 @@ function RecordingsTab({ id }: { id: number }) {
               onClick={handleDownload}
               disabled={files.length === 0}
             >
-              Download files ({files.length})
+              {t('recordings.downloadFiles', { count: files.length })}
             </Button>
           </Box>
         </Stack>
@@ -705,6 +724,7 @@ function RecordingsTab({ id }: { id: number }) {
 }
 
 export default function DeviceDetailPage() {
+  const { t } = useLocale();
   const { id } = useParams();
   const deviceId = Number(id);
   const [tab, setTab] = useState(0);
@@ -713,14 +733,14 @@ export default function DeviceDetailPage() {
     <Stack spacing={2}>
       <Box>
         <Link component={RouterLink} to="/" underline="hover">
-          ← Back to devices
+          {t('deviceDetail.backToDevices')}
         </Link>
       </Box>
-      <Typography variant="h5">Device #{deviceId}</Typography>
+      <Typography variant="h5">{t('deviceDetail.title', { id: deviceId })}</Typography>
       <Tabs value={tab} onChange={(_e, v) => setTab(v)}>
-        <Tab label="Status" />
-        <Tab label="Channels" />
-        <Tab label="Recordings" />
+        <Tab label={t('deviceDetail.tabStatus')} />
+        <Tab label={t('deviceDetail.tabChannels')} />
+        <Tab label={t('deviceDetail.tabRecordings')} />
       </Tabs>
       <TabPanel value={tab} index={0}>
         <StatusTab id={deviceId} />

@@ -242,7 +242,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@emotion/cache@npm:^11.13.5, @emotion/cache@npm:^11.14.0":
+"@emotion/cache@npm:^11.13.1, @emotion/cache@npm:^11.13.5, @emotion/cache@npm:^11.14.0":
   version: 11.14.0
   resolution: "@emotion/cache@npm:11.14.0"
   dependencies:
@@ -1088,6 +1088,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@hik-mgr/web@workspace:apps/web"
   dependencies:
+    "@emotion/cache": "npm:^11.13.1"
     "@emotion/react": "npm:^11.13.0"
     "@emotion/styled": "npm:^11.13.0"
     "@hik-mgr/shared": "workspace:*"
@@ -1100,6 +1101,8 @@ __metadata:
     react: "npm:^18.3.1"
     react-dom: "npm:^18.3.1"
     react-router-dom: "npm:^6.26.0"
+    stylis: "npm:^4.3.2"
+    stylis-plugin-rtl: "npm:^2.1.1"
     typescript: "npm:^5.5.4"
     vite: "npm:^5.4.1"
   languageName: unknown
@@ -2227,6 +2230,13 @@ __metadata:
     path-type: "npm:^4.0.0"
     yaml: "npm:^1.10.0"
   checksum: 10c0/b923ff6af581638128e5f074a5450ba12c0300b71302398ea38dbeabd33bbcaa0245ca9adbedfcf284a07da50f99ede5658c80bb3e39e2ce770a99d28a21ef03
+  languageName: node
+  linkType: hard
+
+"cssjanus@npm:^2.0.1":
+  version: 2.3.1
+  resolution: "cssjanus@npm:2.3.1"
+  checksum: 10c0/05b5044d5e98f53108c0c15c985f4f6cb0155509b1695f639c52f2055224c9afb96bf1de86943fc7aabfc3a61777b97970a84c36e8b335d6c8e73553ce6cc8dc
   languageName: node
   linkType: hard
 
@@ -4273,10 +4283,28 @@ __metadata:
   languageName: node
   linkType: hard
 
+"stylis-plugin-rtl@npm:^2.1.1":
+  version: 2.1.1
+  resolution: "stylis-plugin-rtl@npm:2.1.1"
+  dependencies:
+    cssjanus: "npm:^2.0.1"
+  peerDependencies:
+    stylis: 4.x
+  checksum: 10c0/706640bba51ca75e3a824f781b59e8d8b8d034a10b839aa93daea166aac6cc67a4e7c063496ea8a09c396b639cff9859a42f5d03937d8f89f8922fd6c7435739
+  languageName: node
+  linkType: hard
+
 "stylis@npm:4.2.0":
   version: 4.2.0
   resolution: "stylis@npm:4.2.0"
   checksum: 10c0/a7128ad5a8ed72652c6eba46bed4f416521bc9745a460ef5741edc725252cebf36ee45e33a8615a7057403c93df0866ab9ee955960792db210bb80abd5ac6543
+  languageName: node
+  linkType: hard
+
+"stylis@npm:^4.3.2":
+  version: 4.4.0
+  resolution: "stylis@npm:4.4.0"
+  checksum: 10c0/259be096d90dfbfe903c8656dcb7591e52a421e577e950ef42ebd9ca02f387623a1165dd08761492fb6e92a7a562d62a53a694a10b0a2f6dcd7a0db107b4bf55
   languageName: node
   linkType: hard
 

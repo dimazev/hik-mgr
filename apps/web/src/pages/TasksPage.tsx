@@ -30,6 +30,7 @@ import type {
   DownloadTaskStatus,
 } from '@hik-mgr/shared';
 import { api } from '../api/client';
+import { useLocale } from '../i18n/LocaleContext';
 
 const TASK_STATUS_COLOR: Record<DownloadTaskStatus, 'default' | 'primary' | 'success' | 'error' | 'warning'> = {
   pending: 'default',
@@ -40,13 +41,17 @@ const TASK_STATUS_COLOR: Record<DownloadTaskStatus, 'default' | 'primary' | 'suc
   interrupted: 'warning',
 };
 
-const TASK_STATUS_LABEL: Record<DownloadTaskStatus, string> = {
-  pending: 'pending',
-  running: 'running',
-  completed: 'completed',
-  failed: 'failed',
-  cancelled: 'cancelled',
-  interrupted: 'interrupted (server restarted)',
+// Labels are looked up through t() at render time (not a static map) so
+// they follow the active locale — 'status.<key>' translation keys are
+// shared with the file/convert status chips below, since 'pending',
+// 'done', 'failed' etc. mean the same thing in all three contexts.
+const TASK_STATUS_KEY: Record<DownloadTaskStatus, string> = {
+  pending: 'status.pending',
+  running: 'status.running',
+  completed: 'status.completed',
+  failed: 'status.failed',
+  cancelled: 'status.cancelled',
+  interrupted: 'status.interrupted',
 };
 
 const FILE_STATUS_COLOR: Record<DownloadTaskFileStatus, 'default' | 'primary' | 'success' | 'error'> = {
@@ -56,6 +61,13 @@ const FILE_STATUS_COLOR: Record<DownloadTaskFileStatus, 'default' | 'primary' | 
   failed: 'error',
 };
 
+const FILE_STATUS_KEY: Record<DownloadTaskFileStatus, string> = {
+  pending: 'status.pending',
+  downloading: 'status.downloading',
+  done: 'status.done',
+  failed: 'status.failed',
+};
+
 const CONVERT_STATUS_COLOR: Record<DownloadTaskFileConvertStatus, 'default' | 'primary' | 'success' | 'error'> = {
   pending: 'default',
   converting: 'primary',
@@ -63,10 +75,17 @@ const CONVERT_STATUS_COLOR: Record<DownloadTaskFileConvertStatus, 'default' | 'p
   failed: 'error',
 };
 
-function formatDateTime(iso: string): string {
+const CONVERT_STATUS_KEY: Record<DownloadTaskFileConvertStatus, string> = {
+  pending: 'status.pending',
+  converting: 'status.converting',
+  done: 'status.done',
+  failed: 'status.failed',
+};
+
+function formatDateTime(iso: string, locale: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString(locale, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 function isActive(status: DownloadTaskStatus): boolean {
@@ -84,14 +103,15 @@ function formatBytes(bytes: number): string {
 }
 
 /** Rounds to whole minutes — matches the granularity the server logs (formatEta in downloadWorker.ts). */
-function formatEtaMinutes(seconds: number): string {
+function formatEtaMinutes(seconds: number, t: (key: string, vars?: Record<string, string | number>) => string): string {
   const mins = Math.round(seconds / 60);
-  if (mins < 1) return '<1 min left';
-  return `~${mins} min${mins === 1 ? '' : 's'} left`;
+  if (mins < 1) return t('tasks.etaLessThanMin');
+  return t(mins === 1 ? 'tasks.etaMinutesOne' : 'tasks.etaMinutesOther', { mins });
 }
 
 /** Live per-file progress bar + byte count + estimated time remaining while a file is actively downloading. */
 function FileProgress({ file }: { file: DownloadTaskFile }) {
+  const { t } = useLocale();
   if (file.status !== 'downloading') {
     return <>{file.downloadedBytes > 0 ? formatBytes(file.downloadedBytes) : '—'}</>;
   }
@@ -106,7 +126,7 @@ function FileProgress({ file }: { file: DownloadTaskFile }) {
       </Typography>
       {file.etaSeconds !== null && (
         <Typography variant="caption" color="text.secondary" display="block">
-          {formatEtaMinutes(file.etaSeconds)}
+          {formatEtaMinutes(file.etaSeconds, t)}
         </Typography>
       )}
     </Box>
@@ -121,10 +141,11 @@ function FileProgress({ file }: { file: DownloadTaskFile }) {
  * file which stays server-side) once it's 'done'.
  */
 function ConvertSubtask({ taskId, file }: { taskId: number; file: DownloadTaskFile }) {
+  const { t } = useLocale();
   if (file.status !== 'done') {
     return (
       <Typography variant="caption" color="text.secondary">
-        Waiting for download
+        {t('tasks.waitingForDownload')}
       </Typography>
     );
   }
@@ -132,7 +153,7 @@ function ConvertSubtask({ taskId, file }: { taskId: number; file: DownloadTaskFi
   return (
     <Stack spacing={0.5}>
       <Stack direction="row" spacing={0.5} alignItems="center">
-        <Chip size="small" label={file.convertStatus} color={CONVERT_STATUS_COLOR[file.convertStatus]} />
+        <Chip size="small" label={t(CONVERT_STATUS_KEY[file.convertStatus])} color={CONVERT_STATUS_COLOR[file.convertStatus]} />
         {file.convertStatus === 'done' && (
           <Button
             size="small"
@@ -142,7 +163,7 @@ function ConvertSubtask({ taskId, file }: { taskId: number; file: DownloadTaskFi
             rel="noreferrer"
             startIcon={<FileDownloadIcon fontSize="small" />}
           >
-            Download
+            {t('recordingFiles.download')}
           </Button>
         )}
       </Stack>
@@ -177,6 +198,7 @@ function ConvertSubtask({ taskId, file }: { taskId: number; file: DownloadTaskFi
  * task's detail doesn't change.
  */
 function TaskRow({ task }: { task: DownloadTask }) {
+  const { t, locale } = useLocale();
   const [expanded, setExpanded] = useState(false);
   const queryClient = useQueryClient();
 
@@ -221,15 +243,15 @@ function TaskRow({ task }: { task: DownloadTask }) {
       <TableRow hover sx={{ cursor: 'pointer' }} onClick={() => setExpanded((e) => !e)}>
         <TableCell>{task.id}</TableCell>
         <TableCell>{task.deviceName}</TableCell>
-        <TableCell>{formatDateTime(task.createdAt)}</TableCell>
+        <TableCell>{formatDateTime(task.createdAt, locale)}</TableCell>
         <TableCell>
-          <Chip size="small" label={TASK_STATUS_LABEL[task.status]} color={TASK_STATUS_COLOR[task.status]} />
+          <Chip size="small" label={t(TASK_STATUS_KEY[task.status])} color={TASK_STATUS_COLOR[task.status]} />
         </TableCell>
         <TableCell>
           {progressDone} / {task.totalFiles}
           {task.failedFiles > 0 && (
             <Typography component="span" variant="caption" color="error" sx={{ ml: 0.5 }}>
-              ({task.failedFiles} failed)
+              {t('tasks.failedSuffix', { count: task.failedFiles })}
             </Typography>
           )}
         </TableCell>
@@ -243,7 +265,7 @@ function TaskRow({ task }: { task: DownloadTask }) {
                 onClick={() => cancelMutation.mutate()}
                 disabled={cancelMutation.isPending}
               >
-                Cancel
+                {t('devices.cancel')}
               </Button>
             )}
             {isResumable(task.status) && (
@@ -253,10 +275,14 @@ function TaskRow({ task }: { task: DownloadTask }) {
                 onClick={() => resumeMutation.mutate()}
                 disabled={resumeMutation.isPending}
               >
-                Resume
+                {t('tasks.resume')}
               </Button>
             )}
-            <IconButton size="small" aria-label={expanded ? 'Collapse' : 'Expand'} onClick={() => setExpanded((e) => !e)}>
+            <IconButton
+              size="small"
+              aria-label={expanded ? t('tasks.collapseAria') : t('tasks.expandAria')}
+              onClick={() => setExpanded((e) => !e)}
+            >
               {expanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
             </IconButton>
           </Stack>
@@ -278,11 +304,11 @@ function TaskRow({ task }: { task: DownloadTask }) {
                 <Table size="small">
                   <TableHead>
                     <TableRow>
-                      <TableCell>Channel</TableCell>
-                      <TableCell>File name</TableCell>
-                      <TableCell>Download</TableCell>
-                      <TableCell>Progress</TableCell>
-                      <TableCell>Convert (720p)</TableCell>
+                      <TableCell>{t('recordings.colChannel')}</TableCell>
+                      <TableCell>{t('recordingFiles.colFileName')}</TableCell>
+                      <TableCell>{t('recordingFiles.download')}</TableCell>
+                      <TableCell>{t('tasks.colProgress')}</TableCell>
+                      <TableCell>{t('tasks.colConvert')}</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -291,7 +317,7 @@ function TaskRow({ task }: { task: DownloadTask }) {
                         <TableCell>{f.channelName}</TableCell>
                         <TableCell>{f.filename}</TableCell>
                         <TableCell>
-                          <Chip size="small" label={f.status} color={FILE_STATUS_COLOR[f.status]} />
+                          <Chip size="small" label={t(FILE_STATUS_KEY[f.status])} color={FILE_STATUS_COLOR[f.status]} />
                           {f.error && (
                             <Typography variant="caption" color="error" display="block">
                               {f.error}
@@ -318,12 +344,13 @@ function TaskRow({ task }: { task: DownloadTask }) {
 }
 
 export default function TasksPage() {
+  const { t } = useLocale();
   const q = useQuery({
     queryKey: ['download-tasks'],
     queryFn: api.listDownloadTasks,
     refetchInterval: (query) => {
       const tasks = query.state.data ?? [];
-      return tasks.some((t) => isActive(t.status)) ? 3000 : false;
+      return tasks.some((task) => isActive(task.status)) ? 3000 : false;
     },
   });
 
@@ -331,13 +358,13 @@ export default function TasksPage() {
 
   return (
     <Stack spacing={2}>
-      <Typography variant="h5">Download tasks</Typography>
+      <Typography variant="h5">{t('tasks.title')}</Typography>
 
       {q.isLoading && (
         <Stack direction="row" spacing={1} alignItems="center">
           <CircularProgress size={18} />
           <Typography variant="body2" color="text.secondary">
-            Loading tasks…
+            {t('tasks.loading')}
           </Typography>
         </Stack>
       )}
@@ -349,22 +376,22 @@ export default function TasksPage() {
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>ID</TableCell>
-                <TableCell>Device</TableCell>
-                <TableCell>Created</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Progress</TableCell>
+                <TableCell>{t('channels.colId')}</TableCell>
+                <TableCell>{t('tasks.colDevice')}</TableCell>
+                <TableCell>{t('tasks.colCreated')}</TableCell>
+                <TableCell>{t('deviceDetail.tabStatus')}</TableCell>
+                <TableCell>{t('tasks.colProgress')}</TableCell>
                 <TableCell />
               </TableRow>
             </TableHead>
             <TableBody>
-              {tasks.map((t) => (
-                <TaskRow key={t.id} task={t} />
+              {tasks.map((task) => (
+                <TaskRow key={task.id} task={task} />
               ))}
               {tasks.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={6}>
-                    <Typography color="text.secondary">No download tasks yet.</Typography>
+                    <Typography color="text.secondary">{t('tasks.none')}</Typography>
                   </TableCell>
                 </TableRow>
               )}

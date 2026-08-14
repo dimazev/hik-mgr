@@ -23,6 +23,7 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import type { DeviceInput } from '@hik-mgr/shared';
 import { api } from '../api/client';
+import { useLocale } from '../i18n/LocaleContext';
 
 const emptyForm: DeviceInput = {
   name: '',
@@ -34,6 +35,7 @@ const emptyForm: DeviceInput = {
 };
 
 export default function DevicesPage() {
+  const { t } = useLocale();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const devicesQuery = useQuery({ queryKey: ['devices'], queryFn: api.listDevices });
@@ -58,9 +60,9 @@ export default function DevicesPage() {
   return (
     <Stack spacing={2}>
       <Stack direction="row" justifyContent="space-between" alignItems="center">
-        <Typography variant="h5">Devices</Typography>
+        <Typography variant="h5">{t('devices.title')}</Typography>
         <Button variant="contained" startIcon={<AddIcon />} onClick={() => setOpen(true)}>
-          Add device
+          {t('devices.addDevice')}
         </Button>
       </Stack>
 
@@ -72,12 +74,12 @@ export default function DevicesPage() {
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell>Name</TableCell>
-              <TableCell>Host</TableCell>
-              <TableCell>Port</TableCell>
-              <TableCell>Protocol</TableCell>
-              <TableCell>Username</TableCell>
-              <TableCell align="right">Actions</TableCell>
+              <TableCell>{t('devices.colName')}</TableCell>
+              <TableCell>{t('devices.colHost')}</TableCell>
+              <TableCell>{t('devices.colPort')}</TableCell>
+              <TableCell>{t('devices.colProtocol')}</TableCell>
+              <TableCell>{t('devices.colUsername')}</TableCell>
+              <TableCell align="right">{t('devices.colActions')}</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -95,7 +97,7 @@ export default function DevicesPage() {
                 <TableCell>{d.username}</TableCell>
                 <TableCell align="right">
                   <IconButton
-                    aria-label="delete"
+                    aria-label={t('devices.deleteAria')}
                     onClick={(e) => {
                       e.stopPropagation();
                       deleteMutation.mutate(d.id);
@@ -109,7 +111,7 @@ export default function DevicesPage() {
             {(devicesQuery.data ?? []).length === 0 && !devicesQuery.isLoading && (
               <TableRow>
                 <TableCell colSpan={6}>
-                  <Typography color="text.secondary">No devices yet — add one to get started.</Typography>
+                  <Typography color="text.secondary">{t('devices.empty')}</Typography>
                 </TableCell>
               </TableRow>
             )}
@@ -118,18 +120,18 @@ export default function DevicesPage() {
       </TableContainer>
 
       <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>Add device</DialogTitle>
+        <DialogTitle>{t('devices.addDevice')}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             <TextField
-              label="Name"
+              label={t('devices.colName')}
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               fullWidth
               required
             />
             <TextField
-              label="Host"
+              label={t('devices.colHost')}
               placeholder="b22.kozow.com"
               value={form.host}
               onChange={(e) => setForm({ ...form, host: e.target.value })}
@@ -138,14 +140,14 @@ export default function DevicesPage() {
             />
             <Stack direction="row" spacing={2}>
               <TextField
-                label="Port"
+                label={t('devices.colPort')}
                 type="number"
                 value={form.port}
                 onChange={(e) => setForm({ ...form, port: Number(e.target.value) })}
                 fullWidth
               />
               <TextField
-                label="Protocol"
+                label={t('devices.colProtocol')}
                 select
                 value={form.protocol}
                 onChange={(e) => setForm({ ...form, protocol: e.target.value as 'http' | 'https' })}
@@ -156,13 +158,13 @@ export default function DevicesPage() {
               </TextField>
             </Stack>
             <TextField
-              label="Username"
+              label={t('devices.colUsername')}
               value={form.username}
               onChange={(e) => setForm({ ...form, username: e.target.value })}
               fullWidth
             />
             <TextField
-              label="Password"
+              label={t('devices.password')}
               type="password"
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
@@ -175,13 +177,13 @@ export default function DevicesPage() {
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setOpen(false)}>Cancel</Button>
+          <Button onClick={() => setOpen(false)}>{t('devices.cancel')}</Button>
           <Button
             variant="contained"
             disabled={!form.name || !form.host || !form.password || createMutation.isPending}
             onClick={() => createMutation.mutate(form)}
           >
-            Save
+            {t('devices.save')}
           </Button>
         </DialogActions>
       </Dialog>

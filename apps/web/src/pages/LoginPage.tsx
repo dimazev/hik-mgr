@@ -10,8 +10,10 @@ import Stack from '@mui/material/Stack';
 import Avatar from '@mui/material/Avatar';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import { api } from '../api/client';
+import { useLocale } from '../i18n/LocaleContext';
 
 export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
+  const { t } = useLocale();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
@@ -41,12 +43,12 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
           <Avatar sx={{ bgcolor: 'primary.main' }}>
             <LockOutlinedIcon />
           </Avatar>
-          <Typography variant="h5">hik-mgr</Typography>
+          <Typography variant="h5">{t('app.title')}</Typography>
           <Typography variant="body2" color="text.secondary" textAlign="center">
-            Sign in to manage your Hikvision devices
+            {t('login.subtitle')}
           </Typography>
           <TextField
-            label="Username"
+            label={t('login.username')}
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             fullWidth
@@ -55,7 +57,7 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
             autoComplete="username"
           />
           <TextField
-            label="Password"
+            label={t('login.password')}
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -69,7 +71,7 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
             </Alert>
           )}
           <Button type="submit" variant="contained" fullWidth disabled={loginMutation.isPending}>
-            {loginMutation.isPending ? 'Signing in…' : 'Sign in'}
+            {loginMutation.isPending ? t('login.signingIn') : t('login.signIn')}
           </Button>
         </Stack>
       </Paper>

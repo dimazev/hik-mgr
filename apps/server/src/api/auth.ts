@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { env } from '../env';
-import { SESSION_COOKIE, safeCompare, sessionCookieOptions, signSession, requireAuth } from '../auth';
+import { SESSION_COOKIE, safeCompare, sessionCookieOptions, signSession, requireAuth, verifyShareToken } from '../auth';
 
 const router = Router();
 
@@ -25,6 +25,22 @@ router.post('/login', (req, res) => {
   const token = signSession(env.adminUsername);
   res.cookie(SESSION_COOKIE, token, sessionCookieOptions());
   res.json({ username: env.adminUsername });
+});
+
+// Unauthenticated on purpose — this *is* the login mechanism for anyone
+// holding the link. The token itself is the credential (see shareToken in
+// auth.ts, and the full URL printed to the server log at startup); a
+// missing/wrong token just falls through to a normal redirect to `/`
+// (which shows the regular login page, since no cookie got set) rather
+// than erroring, so a stale or mistyped link degrades gracefully instead
+// of surfacing a confusing error page.
+router.get('/auto-login', (req, res) => {
+  const token = typeof req.query.token === 'string' ? req.query.token : undefined;
+  if (verifyShareToken(token)) {
+    const sessionToken = signSession(env.adminUsername);
+    res.cookie(SESSION_COOKIE, sessionToken, sessionCookieOptions());
+  }
+  res.redirect('/');
 });
 
 router.post('/logout', (_req, res) => {

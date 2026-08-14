@@ -61,6 +61,33 @@ export function verifySession(token: string | undefined): SessionPayload | null 
   }
 }
 
+/**
+ * A stable "magic link" token that logs in as the admin user without a
+ * password — deterministically derived from APP_SECRET (HMAC'd with a
+ * fixed label) rather than randomly generated and stored, so it doesn't
+ * need its own table/row and stays valid across restarts as long as
+ * APP_SECRET itself doesn't change. Rotating APP_SECRET invalidates this
+ * the same way it invalidates every existing session — that's the
+ * "revoke access" lever if a shared link needs to stop working.
+ *
+ * Printed as a full URL at server startup (see printAutoLoginUrl in
+ * index.ts) so it's easy to copy out of `docker compose logs` and hand to
+ * someone else — anyone with this URL can log in as the admin, so treat it
+ * with the same care as the admin password itself.
+ */
+export function shareToken(): string {
+  return crypto.createHmac('sha256', env.appSecret).update('hik-mgr-auto-login-v1').digest('base64url');
+}
+
+/** Constant-time check against shareToken() — same reasoning as safeCompare. */
+export function verifyShareToken(token: string | undefined): boolean {
+  if (!token) return false;
+  const expected = shareToken();
+  const a = Buffer.from(token);
+  const b = Buffer.from(expected);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 export function sessionCookieOptions() {
   return {
     httpOnly: true,

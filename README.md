@@ -268,12 +268,45 @@ Practical notes:
   origin than the API wouldn't carry the cookie without additional CORS
   configuration — out of scope for this MVP.
 
+### Sharing access without a password
+
+Every server start prints an **auto-login share URL** to the log
+(`docker compose logs` in Docker, or straight to stdout with `yarn dev`/`yarn
+serve`) — something like:
+
+```
+Auto-login share URL — anyone with this link is logged in as admin automatically, no password needed. Treat it like the admin password:
+  http://localhost:4000/api/auth/auto-login?token=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+Opening that URL in a browser sets the same session cookie a normal
+password login would and redirects to `/` — no username/password prompt.
+Copy it out of the logs and send it to whoever needs access instead of
+sharing the admin password itself. It's always printed against
+`localhost` — if the person you're sending it to needs a different
+host (a LAN IP, a domain behind a reverse proxy, etc.), swap that part
+of the URL yourself before sending it; the token/path after it stays
+the same.
+
+A few things worth knowing:
+- The token is deterministically derived from `APP_SECRET` (not randomly
+  generated and stored), so it's stable across restarts — the same link
+  keeps working — but also means **rotating `APP_SECRET` invalidates it**,
+  same as it invalidates every existing session and stored device
+  password. That's the "revoke this link" lever if you need one.
+- It logs the visitor in as the single admin account — there's no
+  per-recipient identity or separate permission level (see
+  [Authentication](#authentication) above: this app is single-user by
+  design). Anyone with the link has full access, same as the admin
+  password.
+
 ## API
 
 All endpoints are under `/api`. Everything under `/api/devices` requires
 a valid login session — see [Authentication](#authentication).
 
 - `POST /api/auth/login` — `{ username, password }` → `{ username }` and sets the session cookie, or `401` on bad credentials.
+- `GET /api/auth/auto-login?token=...` — logs in as the admin user and redirects to `/` if `token` matches the share token (see [Sharing access](#sharing-access-without-a-password)); otherwise just redirects to `/` with no session set.
 - `POST /api/auth/logout` — clears the session cookie.
 - `GET /api/auth/me` — `{ username }` if logged in, `401` otherwise. Used by the web client on load to decide login page vs. app.
 - `GET /api/devices` — list devices (no passwords included).

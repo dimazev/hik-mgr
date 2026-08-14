@@ -36,39 +36,39 @@ services:
       # it installs (python3/make/g++/ffmpeg).
       - .:/app
       # node_modules is deliberately carved back out of the bind mount
-      # above: without this, the container would see whatever node_modules
-      # happens to be sitting in the repo on the host (e.g. from running
-      # `yarn install` locally on macOS), and native modules like
-      # better-sqlite3 are compiled per-OS/arch — a macOS build won't load
-      # inside this Linux container.
+      # above, mounted directly at each of its four real project-relative
+      # locations — without this, the container would see whatever
+      # node_modules happens to be sitting in the repo on the host (e.g.
+      # from running `yarn install` locally on macOS), and native modules
+      # like better-sqlite3 are compiled per-OS/arch — a macOS build won't
+      # load inside this Linux container.
       #
-      # One named volume (`node_modules_cache`) mounted at a single path
-      # outside the source tree, /node_modules-cache — bootstrap.sh then
-      # symlinks each of the four node_modules locations this workspace
-      # needs (root, packages/shared, apps/server, apps/web) into its own
-      # subfolder there. This is the "one volume, several subfolders"
-      # shape, done via symlinks rather than Docker's `subpath` mount
-      # option: `subpath` requires the target subfolder to already exist
-      # *inside* the volume before mounting, which a fresh volume doesn't
-      # have on its first use — it doesn't get auto-created the way a
-      # plain top-level mount does, so `docker compose up` failed with
-      # "no such file or directory" the first time this container tried
-      # to start. Symlinks avoid that: bootstrap.sh creates the subfolders
-      # itself with a plain `mkdir -p`, which works unconditionally.
+      # These have to be four separate mounts, each at its real path —
+      # NOT one shared volume symlinked into place from elsewhere. That
+      # was tried (a single volume at /node_modules-cache, symlinked in)
+      # and broke `yarn install` outright: Node's module resolution calls
+      # realpath() on a symlinked module and searches for node_modules
+      # folders from THAT real location, not the symlink's location. Once
+      # resolution follows the symlink out to /node_modules-cache, nested
+      # dependencies (e.g. napi-build-utils, needed by better-sqlite3's
+      # own install script) are simply never found — the real hoisted
+      # node_modules is back at /app/node_modules, unreachable from
+      # outside /app. Node_modules has to physically live at its correct
+      # path for this reason, so one-volume-many-symlinks isn't viable
+      # here no matter how it's wired up.
       #
-      # This used to be `tmpfs` instead, on the theory that RAM-backed
-      # mounts don't persist across a restart the way a volume does — but
-      # tmpfs turned out to break yarn install outright: some Docker
-      # setups mount tmpfs `noexec`, and yarn needs to execute the
-      # binaries it just installed (esbuild, etc.) to verify them, which
-      # failed with EACCES. A regular named volume doesn't have that
-      # restriction, so "don't persist across restarts" is instead
-      # enforced explicitly in bootstrap.sh (which empties these
-      # directories before every yarn install) rather than relying on the
-      # mount type itself to provide that.
-      - node_modules_cache:/node_modules-cache
+      # This used to be `tmpfs` too, on the theory that RAM-backed mounts
+      # don't persist across a restart the way a volume does — but tmpfs
+      # broke yarn install for a different reason: some Docker setups
+      # mount tmpfs `noexec`, and yarn needs to execute the binaries it
+      # just installed (esbuild, etc.) to verify them, which failed with
+      # EACCES. A regular volume doesn't have that restriction, so "don't
+      # persist across restarts" is instead enforced explicitly in
+      # bootstrap.sh (which empties these directories before every yarn
+      # install) rather than relying on the mount type to provide that.
+      - /app/node_modules
+      - /app/packages/shared/node_modules
+      - /app/apps/server/node_modules
+      - /app/apps/web/node_modules
       - ./data:/app/data
     restart: unless-stopped
-
-volumes:
-  node_modules_cache:

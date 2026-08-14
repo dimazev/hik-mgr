@@ -9,35 +9,26 @@ set -e
 # risk being a precompiled binary baked in under one environment and then
 # loaded under a subtly different one.
 
-# node_modules is backed by a single named volume mounted at
-# /node_modules-cache (see docker-compose.yml) — this creates one
-# subfolder per workspace inside it (auto-creating them is exactly what
-# Docker's own `subpath` mount option turned out NOT to do on a fresh
-# volume, which is why this is a plain mkdir + symlink instead) and
-# symlinks each expected node_modules location to its subfolder there.
+# node_modules lives on regular (exec-capable) volume mounts, one per
+# workspace, each at its real project-relative path — see the long
+# comment in docker-compose.yml for why not tmpfs and not one shared
+# volume symlinked into place. Volumes DO persist across a
+# `docker compose restart` by default, so to get "never reuse packages
+# from a previous run" anyway, each is emptied explicitly before every
+# install rather than relying on the mount type to do it.
 #
-# The volume DOES persist across a `docker compose restart` by default,
-# so to get "never reuse packages from a previous run" anyway, each
-# subfolder's *contents* are cleared first — `find -mindepth 1 -delete`,
-# not `rm -rf`, since these particular directories don't need removing,
-# just emptying.
-CACHE=/node_modules-cache
+# `find -mindepth 1 -delete` (not `rm -rf <dir>`) deliberately clears each
+# directory's *contents* without removing the directory itself — these
+# paths are active mount points, and `rm -rf` trying to remove a mount
+# point out from under itself would fail with "device busy" and — since
+# this script runs with set -e — abort the whole bootstrap. mkdir -p first
+# covers a directory that doesn't exist yet (a container's very first
+# start).
 echo "[bootstrap] clearing node_modules for a genuinely fresh install..."
-for name in root shared server web; do
-  mkdir -p "$CACHE/$name"
-  find "$CACHE/$name" -mindepth 1 -delete
+for dir in node_modules packages/shared/node_modules apps/server/node_modules apps/web/node_modules; do
+  mkdir -p "$dir"
+  find "$dir" -mindepth 1 -delete
 done
-
-# Replace each node_modules location with a symlink into that cache — rm
-# -rf first covers both a real directory (a fresh checkout, or a leftover
-# from before this symlink approach existed) and a stale symlink from a
-# previous run; safe either way since these paths are plain bind-mounted
-# files/directories, not mount points themselves.
-rm -rf node_modules packages/shared/node_modules apps/server/node_modules apps/web/node_modules
-ln -s "$CACHE/root" node_modules
-ln -s "$CACHE/shared" packages/shared/node_modules
-ln -s "$CACHE/server" apps/server/node_modules
-ln -s "$CACHE/web" apps/web/node_modules
 
 echo "[bootstrap] installing dependencies (yarn install, from yarn.lock)..."
 corepack enable

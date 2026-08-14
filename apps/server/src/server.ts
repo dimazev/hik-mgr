@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
 import devicesRouter from './api/devices';
 import authRouter from './api/auth';
+import tasksRouter from './api/tasks';
 import { requireAuth } from './auth';
 
 export function createServer() {
@@ -36,6 +37,7 @@ export function createServer() {
   // requires a valid session.
   app.use('/api/auth', authRouter);
   app.use('/api/devices', requireAuth, devicesRouter);
+  app.use('/api/tasks', requireAuth, tasksRouter);
 
   // Serves the web client's built static files on this same port/process
   // — the "everything through :4000" setup: `yarn build` (builds the web

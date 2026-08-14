@@ -1,11 +1,13 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { eq } from 'drizzle-orm';
-import { deviceInputSchema, deviceUpdateSchema, channelLabelInputSchema, type Device } from '@hik-mgr/shared';
+import { deviceInputSchema, deviceUpdateSchema, channelLabelInputSchema, createDownloadTaskSchema, type Device } from '@hik-mgr/shared';
 import { db } from '../db/client';
 import { devices, type DeviceRow } from '../db/schema';
 import { encryptSecret, decryptSecret } from '../crypto';
 import { getLabelsForDevice, setChannelLabel } from '../db/channelLabels';
 import { getRecordingHistory, saveRecordingHistory } from '../db/recordingHistory';
+import { createDownloadTask, updateTaskStatus } from '../db/downloadTasks';
+import { runDownloadTask } from '../downloadWorker';
 import {
   getDeviceStatus,
   getDeviceInfo,
@@ -327,6 +329,40 @@ router.get(
       merged.push(...result.files.map((f) => ({ ...f, deviceChannelName: ch.name })));
     }
     res.json({ numOfMatches: merged.length, files: merged });
+  })
+);
+
+// Queues a background download task instead of streaming straight to the
+// browser — the recording files page's single "Download" button posts the
+// whole (confirmed) file list here. Responds as soon as the task row is
+// persisted; runDownloadTask keeps working through it file-by-file in the
+// background, updating the DB as it goes (see downloadWorker.ts) so
+// GET /api/tasks/:taskId reflects live progress when the Tasks page polls it.
+router.post(
+  '/:id/download-tasks',
+  asyncHandler(async (req, res) => {
+    const deviceId = Number(req.params.id);
+    const row = getDeviceRow(deviceId);
+    if (!row) {
+      res.status(404).json({ error: 'Device not found' });
+      return;
+    }
+
+    const parsed = createDownloadTaskSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+
+    const taskId = createDownloadTask(deviceId, parsed.data.files);
+
+    runDownloadTask(taskId, toConn(row)).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error(`Download task ${taskId} crashed:`, err);
+      updateTaskStatus(taskId, 'failed');
+    });
+
+    res.status(201).json({ taskId });
   })
 );
 

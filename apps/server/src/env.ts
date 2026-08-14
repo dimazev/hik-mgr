@@ -62,6 +62,13 @@ function resolveDbPath(): string {
   return path.isAbsolute(configured) ? configured : path.resolve(repoRoot, configured);
 }
 
+// Same cwd-independence reasoning as resolveDbPath — where queued
+// recording downloads (see downloadWorker.ts) get written to disk.
+function resolveDownloadsDir(): string {
+  const configured = process.env.DOWNLOADS_DIR || './data/downloads';
+  return path.isAbsolute(configured) ? configured : path.resolve(repoRoot, configured);
+}
+
 export const env = {
   port: Number(process.env.PORT || 4000),
   // Falls back to an insecure default so local `yarn dev` works out of the
@@ -69,6 +76,7 @@ export const env = {
   // .env — see .env.example.
   appSecret: required('APP_SECRET', 'dev-only-insecure-secret-change-me'),
   dbPath: resolveDbPath(),
+  downloadsDir: resolveDownloadsDir(),
   hikDefault: hikDefault(),
   // Single-admin login gating the whole app (see auth.ts / api/auth.ts).
   // Same insecure-default-with-a-warning pattern as APP_SECRET, so a

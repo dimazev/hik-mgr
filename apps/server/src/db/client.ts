@@ -47,6 +47,32 @@ sqlite.exec(`
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (device_id, channel_id)
   );
+
+  CREATE TABLE IF NOT EXISTS download_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    total_files INTEGER NOT NULL DEFAULT 0,
+    completed_files INTEGER NOT NULL DEFAULT 0,
+    failed_files INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS download_task_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL,
+    channel_id INTEGER NOT NULL,
+    channel_name TEXT NOT NULL,
+    playback_uri TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    start_time TEXT,
+    end_time TEXT,
+    size_bytes INTEGER,
+    status TEXT NOT NULL DEFAULT 'pending',
+    downloaded_bytes INTEGER NOT NULL DEFAULT 0,
+    error TEXT
+  );
 `);
 
 export const db = drizzle(sqlite, { schema });

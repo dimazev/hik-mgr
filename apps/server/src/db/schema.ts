@@ -62,3 +62,42 @@ export const recordingHistory = sqliteTable(
 );
 
 export type RecordingHistoryRow = typeof recordingHistory.$inferSelect;
+
+// A "download files" tap on the recording files list creates one of these
+// (plus its download_task_files rows) instead of streaming straight to the
+// browser — see downloadWorker.ts, which works through a task's files one
+// at a time and updates these rows as it goes so the Tasks page can poll
+// progress.
+export const downloadTasks = sqliteTable('download_tasks', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  deviceId: integer('device_id').notNull(),
+  status: text('status', { enum: ['pending', 'running', 'completed', 'failed', 'cancelled'] })
+    .notNull()
+    .default('pending'),
+  totalFiles: integer('total_files').notNull().default(0),
+  completedFiles: integer('completed_files').notNull().default(0),
+  failedFiles: integer('failed_files').notNull().default(0),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export type DownloadTaskRow = typeof downloadTasks.$inferSelect;
+
+export const downloadTaskFiles = sqliteTable('download_task_files', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  taskId: integer('task_id').notNull(),
+  channelId: integer('channel_id').notNull(),
+  channelName: text('channel_name').notNull(),
+  playbackURI: text('playback_uri').notNull(),
+  filename: text('filename').notNull(),
+  startTime: text('start_time'),
+  endTime: text('end_time'),
+  sizeBytes: integer('size_bytes'),
+  status: text('status', { enum: ['pending', 'downloading', 'done', 'failed'] })
+    .notNull()
+    .default('pending'),
+  downloadedBytes: integer('downloaded_bytes').notNull().default(0),
+  error: text('error'),
+});
+
+export type DownloadTaskFileRow = typeof downloadTaskFiles.$inferSelect;

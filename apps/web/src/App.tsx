@@ -10,9 +10,11 @@ import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import VideocamIcon from '@mui/icons-material/Videocam';
 import LogoutIcon from '@mui/icons-material/Logout';
+import DownloadIcon from '@mui/icons-material/Download';
 import DevicesPage from './pages/DevicesPage';
 import DeviceDetailPage from './pages/DeviceDetailPage';
 import RecordingFilesPage from './pages/RecordingFilesPage';
+import TasksPage from './pages/TasksPage';
 import LoginPage from './pages/LoginPage';
 import { api } from './api/client';
 
@@ -62,6 +64,9 @@ export default function App() {
           >
             hik-mgr
           </Typography>
+          <Button color="inherit" size="small" startIcon={<DownloadIcon />} component={Link} to="/tasks" sx={{ mr: 2 }}>
+            Tasks
+          </Button>
           <Typography variant="body2" sx={{ mr: 2, opacity: 0.85 }}>
             {meQuery.data.username}
           </Typography>
@@ -74,6 +79,7 @@ export default function App() {
         <Box sx={{ py: 3 }}>
           <Routes>
             <Route path="/" element={<DevicesPage />} />
+            <Route path="/tasks" element={<TasksPage />} />
             <Route path="/devices/:id/recordings/files" element={<RecordingFilesPage />} />
             <Route path="/devices/:id" element={<DeviceDetailPage />} />
           </Routes>

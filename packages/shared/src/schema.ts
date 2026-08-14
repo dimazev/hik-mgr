@@ -81,3 +81,55 @@ export interface RecordingHistorySummary {
   /** When this summary was last computed. */
   updatedAt: string;
 }
+
+// --- Download tasks -------------------------------------------------------
+//
+// Tapping "Download" on the recording files list doesn't stream a file
+// straight to the browser anymore — it queues a background task that the
+// server works through one file at a time (see downloadWorker.ts),
+// persists in download_tasks/download_task_files, and is tracked on the
+// Tasks page rather than as a browser download.
+
+export type DownloadTaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type DownloadTaskFileStatus = 'pending' | 'downloading' | 'done' | 'failed';
+
+/** One file to queue for download — supplied by the client when creating a task. */
+export const downloadTaskFileInputSchema = z.object({
+  channelId: z.coerce.number().int(),
+  channelName: z.string().min(1).max(200),
+  playbackURI: z.string().min(1),
+  filename: z.string().min(1).max(255),
+  startTime: z.string().nullable().optional(),
+  endTime: z.string().nullable().optional(),
+  sizeBytes: z.coerce.number().nullable().optional(),
+});
+export type DownloadTaskFileInput = z.infer<typeof downloadTaskFileInputSchema>;
+
+/** Body for POST /api/devices/:id/download-tasks */
+export const createDownloadTaskSchema = z.object({
+  files: z.array(downloadTaskFileInputSchema).min(1, 'At least one file is required'),
+});
+export type CreateDownloadTaskInput = z.infer<typeof createDownloadTaskSchema>;
+
+export interface DownloadTaskFile extends DownloadTaskFileInput {
+  id: number;
+  status: DownloadTaskFileStatus;
+  downloadedBytes: number;
+  error: string | null;
+}
+
+export interface DownloadTask {
+  id: number;
+  deviceId: number;
+  deviceName: string;
+  status: DownloadTaskStatus;
+  totalFiles: number;
+  completedFiles: number;
+  failedFiles: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DownloadTaskDetail extends DownloadTask {
+  files: DownloadTaskFile[];
+}

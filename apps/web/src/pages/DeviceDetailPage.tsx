@@ -535,20 +535,15 @@ function RecordingsTab({ id }: { id: number }) {
   const navigate = useNavigate();
   const [startInput, setStartInput] = useState('');
   const [endInput, setEndInput] = useState('');
-  const [selectedChannelIds, setSelectedChannelIds] = useState<Set<number> | null>(null);
+  // No channel pre-selected — the user has to deliberately pick which
+  // channels they want before a search is even allowed (see `canSearch`
+  // below), rather than defaulting to "every channel" and possibly
+  // scanning/downloading far more than intended.
+  const [selectedChannelIds, setSelectedChannelIds] = useState<Set<number>>(new Set());
   const [range, setRange] = useState<{ start: string; end: string; channelIds: number[] } | null>(null);
 
   const channelsQuery = useQuery({ queryKey: ['channels', id], queryFn: () => api.channels(id) });
   const allChannels = channelsQuery.data?.channels ?? [];
-
-  // Default to "every channel selected" once the channel list has loaded —
-  // only overridden once the user actually touches a checkbox.
-  useEffect(() => {
-    if (selectedChannelIds === null && allChannels.length > 0) {
-      setSelectedChannelIds(new Set(allChannels.map((c) => Number(c.id))));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allChannels.length]);
 
   const toggleChannel = (channelId: number) => {
     setSelectedChannelIds((prev) => {

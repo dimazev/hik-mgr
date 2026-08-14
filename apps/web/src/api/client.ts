@@ -1,4 +1,13 @@
-import type { Device, DeviceInput, Channel, RecordingFile, RecordingHistorySummary } from '@hik-mgr/shared';
+import type {
+  Device,
+  DeviceInput,
+  Channel,
+  RecordingFile,
+  RecordingHistorySummary,
+  DownloadTask,
+  DownloadTaskDetail,
+  DownloadTaskFileInput,
+} from '@hik-mgr/shared';
 
 // Fired whenever any request comes back 401 (session missing/expired) so
 // App.tsx can drop back to the login page without every page needing its
@@ -59,6 +68,17 @@ export const api = {
     if (filename) qs.set('filename', filename);
     return `/api/devices/${id}/download?${qs.toString()}`;
   },
+  // Queues a background, file-by-file download task instead of streaming a
+  // single recording straight to the browser — see the Recordings tab /
+  // recording files page's single "Download" button, and TasksPage for
+  // tracking progress afterward.
+  createDownloadTask: (deviceId: number, files: DownloadTaskFileInput[]) =>
+    request<{ taskId: number }>(`/api/devices/${deviceId}/download-tasks`, {
+      method: 'POST',
+      body: JSON.stringify({ files }),
+    }),
+  listDownloadTasks: () => request<DownloadTask[]>('/api/tasks'),
+  getDownloadTask: (taskId: number) => request<DownloadTaskDetail>(`/api/tasks/${taskId}`),
   snapshotUrl: (id: number, track?: number) => {
     const qs = new URLSearchParams({ t: String(Date.now()) });
     if (track) qs.set('track', String(track));

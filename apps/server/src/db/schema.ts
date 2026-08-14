@@ -98,6 +98,7 @@ export const downloadTaskFiles = sqliteTable('download_task_files', {
     .default('pending'),
   downloadedBytes: integer('downloaded_bytes').notNull().default(0),
   totalBytes: integer('total_bytes'),
+  etaSeconds: integer('eta_seconds'),
   error: text('error'),
   // The ffmpeg-conversion subtask for this file — see the comment on
   // DownloadTaskFileConvertStatus in shared/src/schema.ts.

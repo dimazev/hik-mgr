@@ -83,20 +83,32 @@ function formatBytes(bytes: number): string {
   return `${bytes} B`;
 }
 
-/** Live per-file progress bar + byte count while a file is actively downloading. */
+/** Rounds to whole minutes — matches the granularity the server logs (formatEta in downloadWorker.ts). */
+function formatEtaMinutes(seconds: number): string {
+  const mins = Math.round(seconds / 60);
+  if (mins < 1) return '<1 min left';
+  return `~${mins} min${mins === 1 ? '' : 's'} left`;
+}
+
+/** Live per-file progress bar + byte count + estimated time remaining while a file is actively downloading. */
 function FileProgress({ file }: { file: DownloadTaskFile }) {
   if (file.status !== 'downloading') {
     return <>{file.downloadedBytes > 0 ? formatBytes(file.downloadedBytes) : '—'}</>;
   }
   const pct = file.totalBytes ? Math.min(100, (file.downloadedBytes / file.totalBytes) * 100) : null;
   return (
-    <Box sx={{ minWidth: 120 }}>
+    <Box sx={{ minWidth: 140 }}>
       <LinearProgress variant={pct === null ? 'indeterminate' : 'determinate'} value={pct ?? undefined} sx={{ mb: 0.5 }} />
-      <Typography variant="caption" color="text.secondary">
+      <Typography variant="caption" color="text.secondary" display="block">
         {formatBytes(file.downloadedBytes)}
         {file.totalBytes ? ` / ${formatBytes(file.totalBytes)}` : ''}
         {pct !== null ? ` (${pct.toFixed(0)}%)` : ''}
       </Typography>
+      {file.etaSeconds !== null && (
+        <Typography variant="caption" color="text.secondary" display="block">
+          {formatEtaMinutes(file.etaSeconds)}
+        </Typography>
+      )}
     </Box>
   );
 }

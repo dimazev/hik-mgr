@@ -37,6 +37,7 @@ function toPublicFile(row: DownloadTaskFileRow) {
     status: row.status as DownloadTaskFileStatus,
     downloadedBytes: row.downloadedBytes,
     totalBytes: row.totalBytes,
+    etaSeconds: row.etaSeconds,
     error: row.error,
     convertStatus: row.convertStatus as DownloadTaskFileConvertStatus,
     convertProgress: row.convertProgress,
@@ -108,7 +109,7 @@ export function updateTaskStatus(taskId: number, status: DownloadTaskStatus): vo
 export function updateTaskFileStatus(
   fileId: number,
   status: DownloadTaskFileStatus,
-  extra: { downloadedBytes?: number; totalBytes?: number | null; error?: string | null } = {}
+  extra: { downloadedBytes?: number; totalBytes?: number | null; etaSeconds?: number | null; error?: string | null } = {}
 ): void {
   db.update(downloadTaskFiles)
     .set({ status, ...extra })
@@ -119,11 +120,19 @@ export function updateTaskFileStatus(
 /**
  * Lightweight, frequent update used by the in-progress onProgress callback
  * — deliberately doesn't touch `status` or bump task counters (those only
- * change on file start/finish), just the byte counts the Tasks page polls
- * for a live per-file progress bar.
+ * change on file start/finish), just the byte counts (and derived ETA)
+ * the Tasks page polls for a live per-file progress bar.
  */
-export function updateTaskFileProgress(fileId: number, downloadedBytes: number, totalBytes: number | null): void {
-  db.update(downloadTaskFiles).set({ downloadedBytes, totalBytes }).where(eq(downloadTaskFiles.id, fileId)).run();
+export function updateTaskFileProgress(
+  fileId: number,
+  downloadedBytes: number,
+  totalBytes: number | null,
+  etaSeconds: number | null
+): void {
+  db.update(downloadTaskFiles)
+    .set({ downloadedBytes, totalBytes, etaSeconds })
+    .where(eq(downloadTaskFiles.id, fileId))
+    .run();
 }
 
 export function updateTaskFileConvertStatus(
@@ -178,7 +187,7 @@ export function markStaleRunningTasksInterrupted(): number {
       .all();
     for (const file of files) {
       if (file.status === 'downloading') {
-        updateTaskFileStatus(file.id, 'pending');
+        updateTaskFileStatus(file.id, 'pending', { etaSeconds: null });
       }
       if (file.convertStatus === 'converting') {
         updateTaskFileConvertStatus(file.id, 'pending');

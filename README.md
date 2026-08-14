@@ -270,6 +270,36 @@ resumable, same as a failed or cancelled one.
 
 ## Troubleshooting
 
+### Resuming a download task restarts a file from 0% instead of continuing
+
+Check the server log for that file's line — resuming logs one of two
+outcomes for each file it resumes:
+
+```
+"<file>": device honored resume, continuing from 1234 KB
+"<file>": device did not honor resume (replied 200, not 206) — re-downloading the full file from byte 0 instead of continuing from the 1234 KB already on disk
+```
+
+If you see the second line, this isn't a hik-mgr bug — it's the device's
+firmware. `downloadRecording` (`apps/server/src/hik/isapi.ts`) sends a
+`Range: bytes=<existingBytes>-` header on `/ISAPI/ContentMgmt/download`
+when there's already a partial file on disk, but not every Hikvision
+firmware honors `Range` on that particular endpoint. The code only trusts
+a resume if the device actually replies `206 Partial Content`; if it
+replies `200 OK` instead, that means it's sending the *whole* file from
+byte 0 again regardless of what was asked for, so the partial file on disk
+is correctly truncated and rewritten from scratch rather than corrupted by
+splicing old and new bytes together. This is the exact same resume logic
+`hik-connect` used — carried over unchanged, not something new to hik-mgr.
+
+There's no code-side fix for this: if the device doesn't support Range
+here, "resume" is necessarily a full re-download over the network every
+time, no matter which client makes the request. If your device *does*
+report `206` (check the log line above) but you're still seeing a restart
+from 0%, that's a real bug worth reporting — but the more common case,
+especially on older DVR/NVR firmware, is simply no Range support on this
+endpoint.
+
 ### `better-sqlite3` fails to load or fails to compile
 
 Running locally (not Docker) and the server crashes with either a

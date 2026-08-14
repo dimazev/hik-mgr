@@ -134,6 +134,13 @@ export interface DownloadTaskFile extends DownloadTaskFileInput {
   downloadedBytes: number;
   /** Total size reported by the device for this file, if known yet (null until the response headers arrive). */
   totalBytes: number | null;
+  /**
+   * Estimated seconds remaining for the download, based on this attempt's
+   * average throughput so far — null until there's enough data to
+   * estimate (no total size known, or download not yet in progress).
+   * Cleared back to null once the file is 'done'.
+   */
+  etaSeconds: number | null;
   error: string | null;
   /** The ffmpeg-conversion subtask for this file — see DownloadTaskFileConvertStatus above. */
   convertStatus: DownloadTaskFileConvertStatus;

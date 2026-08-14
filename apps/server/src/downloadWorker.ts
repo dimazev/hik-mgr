@@ -20,6 +20,12 @@ function log(taskId: number, message: string): void {
   console.log(`[download-task ${taskId}] ${message}`);
 }
 
+function formatEta(seconds: number): string {
+  const mins = Math.round(seconds / 60);
+  if (mins < 1) return '<1 min';
+  return `${mins} min${mins === 1 ? '' : 's'}`;
+}
+
 interface ActiveTask {
   cancelRequested: boolean;
   activeStream?: NodeJS.ReadableStream;
@@ -110,8 +116,16 @@ export async function runDownloadTask(taskId: number, conn: DeviceConn): Promise
       let downloadSucceeded = file.status === 'done';
 
       if (!downloadSucceeded) {
-        updateTaskFileStatus(file.id, 'downloading');
+        updateTaskFileStatus(file.id, 'downloading', { etaSeconds: null });
         log(taskId, `downloading "${file.filename}" (channel ${file.channelName})`);
+
+        // ETA is estimated from THIS attempt's own throughput (bytes
+        // received since this attempt started, over wall-clock time since
+        // then) rather than the file's overall progress — a resumed
+        // download's transfer rate this time around is what predicts how
+        // much longer it'll actually take, not some blend with a
+        // previous, possibly much slower or interrupted, attempt.
+        const attemptStartedAt = Date.now();
 
         // Throttle DB writes + log lines to roughly once/sec — onProgress
         // can fire many times a second for a fast local device, and
@@ -121,11 +135,20 @@ export async function runDownloadTask(taskId: number, conn: DeviceConn): Promise
           const now = Date.now();
           if (now - lastReported < 1000) return;
           lastReported = now;
-          updateTaskFileProgress(file.id, p.receivedBytes, p.totalBytes);
+
+          const elapsedSeconds = (now - attemptStartedAt) / 1000;
+          const bytesThisAttempt = p.receivedBytes - p.resumedFrom;
+          const bytesPerSecond = elapsedSeconds > 0 ? bytesThisAttempt / elapsedSeconds : 0;
+          const remainingBytes = p.totalBytes !== null ? p.totalBytes - p.receivedBytes : null;
+          const etaSeconds =
+            bytesPerSecond > 0 && remainingBytes !== null ? Math.round(remainingBytes / bytesPerSecond) : null;
+
+          updateTaskFileProgress(file.id, p.receivedBytes, p.totalBytes, etaSeconds);
           const pct = p.percent !== null ? `${p.percent.toFixed(0)}%` : `${Math.round(p.receivedBytes / 1024)} KB`;
+          const etaText = etaSeconds !== null ? `, ETA ${formatEta(etaSeconds)}` : '';
           log(
             taskId,
-            `  "${file.filename}": ${pct}${p.resumedFrom ? ` (resumed from ${Math.round(p.resumedFrom / 1024)} KB)` : ''}`
+            `  "${file.filename}": ${pct}${etaText}${p.resumedFrom ? ` (resumed from ${Math.round(p.resumedFrom / 1024)} KB)` : ''}`
           );
         };
 
@@ -134,11 +157,28 @@ export async function runDownloadTask(taskId: number, conn: DeviceConn): Promise
             onStreamStart: (stream) => {
               active.activeStream = stream;
             },
+            onResumeDecision: ({ attempted, honored, existingBytes }) => {
+              if (!attempted) return;
+              if (honored) {
+                log(taskId, `  "${file.filename}": device honored resume, continuing from ${Math.round(existingBytes / 1024)} KB`);
+              } else {
+                log(
+                  taskId,
+                  `  "${file.filename}": device did not honor resume (replied 200, not 206) — re-downloading the ` +
+                    `full file from byte 0 instead of continuing from the ${Math.round(existingBytes / 1024)} KB already on disk`
+                );
+              }
+            },
           });
           active.activeStream = undefined;
 
           const downloadedBytes = fs.existsSync(destPath) ? fs.statSync(destPath).size : 0;
-          updateTaskFileStatus(file.id, 'done', { downloadedBytes, totalBytes: downloadedBytes, error: null });
+          updateTaskFileStatus(file.id, 'done', {
+            downloadedBytes,
+            totalBytes: downloadedBytes,
+            etaSeconds: null,
+            error: null,
+          });
           incrementTaskCounts(taskId, { completed: 1 });
           log(taskId, `downloaded: "${file.filename}" (${Math.round(downloadedBytes / 1024)} KB)`);
           downloadSucceeded = true;
@@ -150,12 +190,12 @@ export async function runDownloadTask(taskId: number, conn: DeviceConn): Promise
             // The error is *because* we destroyed the stream to cancel —
             // leave the file 'pending' (not 'failed') so a later resume
             // retries it cleanly instead of reporting a spurious failure.
-            updateTaskFileStatus(file.id, 'pending', { error: null });
+            updateTaskFileStatus(file.id, 'pending', { etaSeconds: null, error: null });
             log(taskId, `cancelled mid-download: "${file.filename}"`);
             break;
           }
 
-          updateTaskFileStatus(file.id, 'failed', { error: message });
+          updateTaskFileStatus(file.id, 'failed', { etaSeconds: null, error: message });
           incrementTaskCounts(taskId, { failed: 1 });
           log(taskId, `download failed: "${file.filename}" — ${message}`);
         }

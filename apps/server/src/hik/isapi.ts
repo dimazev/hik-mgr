@@ -174,6 +174,16 @@ export async function downloadRecording(
     // stop *between* files. Optional — nothing here depends on it being
     // used.
     onStreamStart?: (stream: NodeJS.ReadableStream) => void;
+    // Fired once, right after the device's response headers arrive, with
+    // whether a resume was actually possible. `attempted` is true whenever
+    // there were existing bytes on disk to try resuming from; `honored`
+    // is only true if the device replied 206 to that Range request — a
+    // 200 means it ignored Range and is sending the whole file from byte
+    // 0 regardless (some Hikvision firmware doesn't support Range on this
+    // particular download endpoint), so the "resume" silently becomes a
+    // full re-download. Callers can use this to log/surface that instead
+    // of it looking like a resume that mysteriously restarted from 0.
+    onResumeDecision?: (info: { attempted: boolean; honored: boolean; existingBytes: number }) => void;
   } = {}
 ): Promise<string> {
   const resume = opts2.resume !== false;
@@ -202,6 +212,7 @@ export async function downloadRecording(
   const startByte = resumed ? existingBytes : 0;
   const totalBytes = resolveTotalBytes(response.headers, startByte);
 
+  opts2.onResumeDecision?.({ attempted: existingBytes > 0, honored: resumed, existingBytes });
   opts2.onStreamStart?.(response.data);
 
   await new Promise<void>((resolve, reject) => {

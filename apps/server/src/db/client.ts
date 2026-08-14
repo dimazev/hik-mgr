@@ -71,6 +71,8 @@ sqlite.exec(`
     size_bytes INTEGER,
     status TEXT NOT NULL DEFAULT 'pending',
     downloaded_bytes INTEGER NOT NULL DEFAULT 0,
+    total_bytes INTEGER,
+    eta_seconds INTEGER,
     error TEXT,
     convert_status TEXT NOT NULL DEFAULT 'pending',
     convert_progress INTEGER,
@@ -89,6 +91,7 @@ for (const alterStatement of [
   `ALTER TABLE download_task_files ADD COLUMN convert_status TEXT NOT NULL DEFAULT 'pending'`,
   `ALTER TABLE download_task_files ADD COLUMN convert_progress INTEGER`,
   `ALTER TABLE download_task_files ADD COLUMN convert_error TEXT`,
+  `ALTER TABLE download_task_files ADD COLUMN eta_seconds INTEGER`,
 ]) {
   try {
     sqlite.exec(alterStatement);

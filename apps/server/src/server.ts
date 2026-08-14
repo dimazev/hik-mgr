@@ -3,12 +3,22 @@ import fs from 'node:fs';
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import morgan from 'morgan';
 import devicesRouter from './api/devices';
 import authRouter from './api/auth';
 import { requireAuth } from './auth';
 
 export function createServer() {
   const app = express();
+
+  // Logs every request that reaches the server (method, path, status,
+  // response time) — first middleware, so it logs regardless of what
+  // later middleware/routes do with the request. 'dev' gives a short,
+  // colorized line good for a terminal; 'combined' (Apache-style, with
+  // remote addr/referrer/user-agent) is more useful piped to a file, e.g.
+  // in Docker/production. Never logs request bodies, so login passwords
+  // etc. don't end up in these logs.
+  app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
   app.use(cors());
   app.use(express.json());

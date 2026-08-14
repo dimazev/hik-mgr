@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, Link as RouterLink } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Tabs from '@mui/material/Tabs';
@@ -22,12 +22,162 @@ import Chip from '@mui/material/Chip';
 import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
 import Stack from '@mui/material/Stack';
+import Tooltip from '@mui/material/Tooltip';
+import type { SxProps, Theme } from '@mui/material/styles';
 import SaveIcon from '@mui/icons-material/Save';
 import SearchIcon from '@mui/icons-material/Search';
 import ViewModuleIcon from '@mui/icons-material/ViewModule';
 import ViewListIcon from '@mui/icons-material/ViewList';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import VideoLibraryIcon from '@mui/icons-material/VideoLibrary';
 import type { Channel } from '@hik-mgr/shared';
 import { api } from '../api/client';
+
+function formatSince(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+const SNAPSHOT_MAX_ATTEMPTS = 3;
+const SNAPSHOT_RETRY_DELAY_MS = 500;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Fetches a channel's snapshot as a blob (rather than pointing an <img> at
+ * the URL directly) so a failed fetch can be told apart from a successful
+ * one: `url` is only ever updated on success, so if a refresh fails (device
+ * offline, timeout, etc.) the last successfully loaded snapshot stays on
+ * screen instead of the browser swapping in a broken-image icon — `error`
+ * is set alongside it so callers can show that the image is stale.
+ *
+ * A single request failure (e.g. a transient 500 while the device is busy)
+ * is retried up to SNAPSHOT_MAX_ATTEMPTS times before giving up and
+ * surfacing `error`.
+ */
+function useSnapshot(deviceId: number, track: number) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [attempt, setAttempt] = useState(0);
+  const currentUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+
+    (async () => {
+      let lastError: unknown = null;
+
+      for (let attemptNum = 1; attemptNum <= SNAPSHOT_MAX_ATTEMPTS; attemptNum++) {
+        if (cancelled) return;
+        try {
+          const res = await fetch(api.snapshotUrl(deviceId, track));
+          if (!res.ok) throw new Error(`Snapshot request failed (${res.status})`);
+          const blob = await res.blob();
+          if (cancelled) return;
+          const next = URL.createObjectURL(blob);
+          if (currentUrlRef.current) URL.revokeObjectURL(currentUrlRef.current);
+          currentUrlRef.current = next;
+          setUrl(next);
+          setError(null);
+          lastError = null;
+          break;
+        } catch (err) {
+          lastError = err;
+          if (attemptNum < SNAPSHOT_MAX_ATTEMPTS) {
+            await delay(SNAPSHOT_RETRY_DELAY_MS);
+          }
+        }
+      }
+
+      if (cancelled) return;
+      if (lastError) {
+        // Deliberately not touching `url` here — keep whatever loaded last.
+        setError(lastError instanceof Error ? lastError.message : 'Failed to load snapshot');
+      }
+      setLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deviceId, track, attempt]);
+
+  // Revoke the last object URL on unmount so it doesn't leak.
+  useEffect(() => {
+    return () => {
+      if (currentUrlRef.current) URL.revokeObjectURL(currentUrlRef.current);
+    };
+  }, []);
+
+  return { url, error, loading, refresh: () => setAttempt((n) => n + 1) };
+}
+
+function SnapshotImage({
+  deviceId,
+  track,
+  alt,
+  sx,
+  showRefresh = true,
+}: {
+  deviceId: number;
+  track: number;
+  alt: string;
+  sx?: SxProps<Theme>;
+  showRefresh?: boolean;
+}) {
+  const { url, error, loading, refresh } = useSnapshot(deviceId, track);
+
+  return (
+    <Box sx={{ position: 'relative', overflow: 'hidden', bgcolor: 'grey.200', ...sx }}>
+      {url ? (
+        <Box component="img" src={url} alt={alt} sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+      ) : (
+        <Box sx={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {loading ? (
+            <CircularProgress size={18} />
+          ) : (
+            <Typography variant="caption" color="text.secondary">
+              No snapshot
+            </Typography>
+          )}
+        </Box>
+      )}
+      {error && (
+        <Tooltip title={`Snapshot refresh failed, showing the last successful one. ${error}`}>
+          <WarningAmberIcon
+            fontSize="small"
+            color="warning"
+            sx={{ position: 'absolute', top: 4, left: 4, bgcolor: 'background.paper', borderRadius: '50%', p: 0.25 }}
+          />
+        </Tooltip>
+      )}
+      {showRefresh && (
+        <IconButton
+          aria-label="Refresh snapshot"
+          size="small"
+          onClick={refresh}
+          disabled={loading}
+          sx={{
+            position: 'absolute',
+            top: 4,
+            right: 4,
+            bgcolor: 'background.paper',
+            '&:hover': { bgcolor: 'background.paper' },
+          }}
+        >
+          <RefreshIcon fontSize="small" />
+        </IconButton>
+      )}
+    </Box>
+  );
+}
 
 function TabPanel({ value, index, children }: { value: number; index: number; children: React.ReactNode }) {
   if (value !== index) return null;
@@ -93,6 +243,78 @@ function useChannelLabelEditor(deviceId: number, channel: Channel) {
   };
 }
 
+/**
+ * Recording-history summary for one channel — "since when" it has
+ * recordings and how many files were found. Backed by the server's
+ * recording_history cache table: the first load for a channel triggers a
+ * (slow) scan of the device's whole recording index, which is then cached,
+ * so every load after that is instant until the user hits refresh.
+ */
+function useRecordingHistory(deviceId: number, channelId: number) {
+  const queryClient = useQueryClient();
+  const queryKey = ['recording-history', deviceId, channelId];
+
+  const query = useQuery({
+    queryKey,
+    queryFn: () => api.recordingHistory(deviceId, channelId),
+  });
+
+  const refreshMutation = useMutation({
+    mutationFn: () => api.recordingHistory(deviceId, channelId, true),
+    onSuccess: (data) => queryClient.setQueryData(queryKey, data),
+  });
+
+  return {
+    summary: query.data,
+    loading: query.isLoading || refreshMutation.isPending,
+    error: query.isError
+      ? (query.error as Error).message
+      : refreshMutation.isError
+        ? (refreshMutation.error as Error).message
+        : null,
+    refresh: () => refreshMutation.mutate(),
+  };
+}
+
+function RecordingHistoryLine({ deviceId, channel }: { deviceId: number; channel: Channel }) {
+  const { summary, loading, error, refresh } = useRecordingHistory(deviceId, Number(channel.id));
+
+  return (
+    <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mt: 1 }}>
+      <VideoLibraryIcon fontSize="small" color="action" />
+      {loading && !summary ? (
+        <>
+          <CircularProgress size={12} />
+          <Typography variant="caption" color="text.secondary">
+            Scanning recording history…
+          </Typography>
+        </>
+      ) : error && !summary ? (
+        <Typography variant="caption" color="error">
+          {error}
+        </Typography>
+      ) : summary ? (
+        <Typography variant="caption" color="text.secondary">
+          {summary.fileCount === 0
+            ? 'No recordings found'
+            : `Recordings since ${summary.earliestStart ? formatSince(summary.earliestStart) : 'unknown'} · ${
+                summary.fileCount
+              }${summary.truncated ? '+' : ''} file${summary.fileCount === 1 ? '' : 's'}`}
+        </Typography>
+      ) : (
+        <Typography variant="caption" color="text.secondary">
+          Recording history unavailable
+        </Typography>
+      )}
+      <Tooltip title="Rescan device for recording history">
+        <IconButton aria-label="Refresh recording history" size="small" onClick={refresh} disabled={loading}>
+          <RefreshIcon sx={{ fontSize: 14 }} />
+        </IconButton>
+      </Tooltip>
+    </Stack>
+  );
+}
+
 function ChannelCard({ deviceId, channel }: { deviceId: number; channel: Channel }) {
   const { label, setLabel, dirty, save, isSaving, error } = useChannelLabelEditor(deviceId, channel);
   const track = Number(channel.id) * 100 + 1;
@@ -100,11 +322,11 @@ function ChannelCard({ deviceId, channel }: { deviceId: number; channel: Channel
 
   return (
     <Paper sx={{ p: 1.5 }}>
-      <Box
-        component="img"
-        src={api.snapshotUrl(deviceId, track)}
+      <SnapshotImage
+        deviceId={deviceId}
+        track={track}
         alt={`Snapshot of ${displayName}`}
-        sx={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', bgcolor: 'grey.200', borderRadius: 1, mb: 1.5 }}
+        sx={{ width: '100%', aspectRatio: '4 / 3', borderRadius: 1, mb: 1.5 }}
       />
       <Stack direction="row" spacing={1} alignItems="flex-start">
         <TextField
@@ -134,6 +356,7 @@ function ChannelCard({ deviceId, channel }: { deviceId: number; channel: Channel
           sx={{ mt: 1 }}
         />
       )}
+      <RecordingHistoryLine deviceId={deviceId} channel={channel} />
       {error && (
         <Alert severity="error" sx={{ mt: 1 }}>
           {error}
@@ -151,11 +374,12 @@ function ChannelListRow({ deviceId, channel }: { deviceId: number; channel: Chan
   return (
     <TableRow>
       <TableCell sx={{ width: 88 }}>
-        <Box
-          component="img"
-          src={api.snapshotUrl(deviceId, track)}
+        <SnapshotImage
+          deviceId={deviceId}
+          track={track}
           alt={`Snapshot of ${displayName}`}
-          sx={{ width: 72, height: 54, objectFit: 'cover', borderRadius: 1, display: 'block', bgcolor: 'grey.200' }}
+          sx={{ width: 72, height: 54, borderRadius: 1 }}
+          showRefresh={false}
         />
       </TableCell>
       <TableCell sx={{ width: 56 }}>{channel.id}</TableCell>
@@ -190,6 +414,9 @@ function ChannelListRow({ deviceId, channel }: { deviceId: number; channel: Chan
         ) : (
           <Chip size="small" label={channel.online ? 'Online' : 'Offline'} color={channel.online ? 'success' : 'default'} />
         )}
+      </TableCell>
+      <TableCell sx={{ minWidth: 220 }}>
+        <RecordingHistoryLine deviceId={deviceId} channel={channel} />
       </TableCell>
     </TableRow>
   );
@@ -267,6 +494,7 @@ function ChannelsTab({ id }: { id: number }) {
                 <TableCell>Device name</TableCell>
                 <TableCell>IP</TableCell>
                 <TableCell>Status</TableCell>
+                <TableCell>Recordings</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -278,49 +506,6 @@ function ChannelsTab({ id }: { id: number }) {
         </TableContainer>
       )}
     </Stack>
-  );
-}
-
-function RecordingsTab({ id }: { id: number }) {
-  const q = useQuery({ queryKey: ['files', id], queryFn: () => api.files(id) });
-  if (q.isLoading) return <CircularProgress size={24} />;
-  if (q.isError) return <Alert severity="error">{(q.error as Error).message}</Alert>;
-  return (
-    <TableContainer component={Paper}>
-      <Table size="small">
-        <TableHead>
-          <TableRow>
-            <TableCell>Channel</TableCell>
-            <TableCell>Start</TableCell>
-            <TableCell>End</TableCell>
-            <TableCell>Size</TableCell>
-            <TableCell align="right">Download</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {(q.data?.files ?? []).map((f, i) => (
-            <TableRow key={`${f.playbackURI}-${i}`}>
-              <TableCell>{f.deviceChannelName ?? '—'}</TableCell>
-              <TableCell>{f.startTime ?? '—'}</TableCell>
-              <TableCell>{f.endTime ?? '—'}</TableCell>
-              <TableCell>{f.sizeBytes ?? '—'}</TableCell>
-              <TableCell align="right">
-                <Link href={api.downloadUrl(id, f.playbackURI)} target="_blank" rel="noreferrer">
-                  Download
-                </Link>
-              </TableCell>
-            </TableRow>
-          ))}
-          {(q.data?.files ?? []).length === 0 && (
-            <TableRow>
-              <TableCell colSpan={5}>
-                <Typography color="text.secondary">No recordings found in range.</Typography>
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
-    </TableContainer>
   );
 }
 
@@ -340,16 +525,12 @@ export default function DeviceDetailPage() {
       <Tabs value={tab} onChange={(_e, v) => setTab(v)}>
         <Tab label="Status" />
         <Tab label="Channels" />
-        <Tab label="Recordings" />
       </Tabs>
       <TabPanel value={tab} index={0}>
         <StatusTab id={deviceId} />
       </TabPanel>
       <TabPanel value={tab} index={1}>
         <ChannelsTab id={deviceId} />
-      </TabPanel>
-      <TabPanel value={tab} index={2}>
-        <RecordingsTab id={deviceId} />
       </TabPanel>
     </Stack>
   );

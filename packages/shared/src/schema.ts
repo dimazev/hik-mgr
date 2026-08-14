@@ -63,3 +63,21 @@ export interface RecordingFile {
 export interface DeviceStatus {
   raw: unknown;
 }
+
+/**
+ * Cached summary of a channel's recording history — how far back its
+ * recordings go and how many files were found — computed by scanning the
+ * device (which can be slow) and cached in recording_history so subsequent
+ * loads are instant. See GET /:id/channels/:channelId/recording-history.
+ */
+export interface RecordingHistorySummary {
+  channelId: number;
+  /** Earliest recording start time found, or null if the channel has no recordings. */
+  earliestStart: string | null;
+  /** Number of recording files found (capped by the scan's maxResults — see `truncated`). */
+  fileCount: number;
+  /** True if the scan hit its result cap and there may be more/older recordings than counted. */
+  truncated: boolean;
+  /** When this summary was last computed. */
+  updatedAt: string;
+}

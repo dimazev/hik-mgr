@@ -5,6 +5,7 @@ import { db } from '../db/client';
 import { devices, type DeviceRow } from '../db/schema';
 import { encryptSecret, decryptSecret } from '../crypto';
 import { getLabelsForDevice, setChannelLabel } from '../db/channelLabels';
+import { getRecordingHistory, saveRecordingHistory } from '../db/recordingHistory';
 import {
   getDeviceStatus,
   getDeviceInfo,
@@ -195,6 +196,64 @@ router.put(
 
     setChannelLabel(deviceId, channelId, parsed.data.label);
     res.json({ channelId, label: parsed.data.label.trim() || null });
+  })
+);
+
+// How far back to look and how many results to scan when computing a
+// channel's recording-history summary (earliest recording + file count).
+// This is a one-off scan of the device's whole search index, which is why
+// the result is cached (see db/recordingHistory.ts) instead of redone on
+// every page load — only ?refresh=1 forces a fresh scan.
+const RECORDING_HISTORY_EPOCH = '2000-01-01T00:00:00Z';
+const RECORDING_HISTORY_MAX_RESULTS = 5000;
+
+router.get(
+  '/:id/channels/:channelId/recording-history',
+  asyncHandler(async (req, res) => {
+    const deviceId = Number(req.params.id);
+    const channelId = Number(req.params.channelId);
+    const row = getDeviceRow(deviceId);
+    if (!row) {
+      res.status(404).json({ error: 'Device not found' });
+      return;
+    }
+    if (!Number.isFinite(channelId)) {
+      res.status(400).json({ error: 'Invalid channel id' });
+      return;
+    }
+
+    const forceRefresh = req.query.refresh === '1';
+    if (!forceRefresh) {
+      const cached = getRecordingHistory(deviceId, channelId);
+      if (cached) {
+        res.json(cached);
+        return;
+      }
+    }
+
+    const trackID = channelId * 100 + 1;
+    const result = await searchRecordings(toConn(row), {
+      trackID,
+      startTime: RECORDING_HISTORY_EPOCH,
+      endTime: new Date().toISOString(),
+      maxResults: RECORDING_HISTORY_MAX_RESULTS,
+    });
+
+    let earliestStart: string | null = null;
+    for (const f of result.files) {
+      if (f.startTime && (!earliestStart || f.startTime < earliestStart)) earliestStart = f.startTime;
+    }
+
+    const summary = {
+      channelId,
+      earliestStart,
+      fileCount: result.numOfMatches,
+      truncated: result.truncated,
+      updatedAt: new Date().toISOString(),
+    };
+
+    saveRecordingHistory(deviceId, summary);
+    res.json(summary);
   })
 );
 

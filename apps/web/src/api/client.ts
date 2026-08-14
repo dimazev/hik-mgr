@@ -1,4 +1,4 @@
-import type { Device, DeviceInput, Channel, RecordingFile } from '@hik-mgr/shared';
+import type { Device, DeviceInput, Channel, RecordingFile, RecordingHistorySummary } from '@hik-mgr/shared';
 
 // Fired whenever any request comes back 401 (session missing/expired) so
 // App.tsx can drop back to the login page without every page needing its
@@ -37,6 +37,13 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ label }),
     }),
+  // Cached summary (earliest recording + file count) — a cheap cache read
+  // unless `refresh` is set, in which case the server does a fresh (slow)
+  // scan of the device's recording index before returning.
+  recordingHistory: (deviceId: number, channelId: number, refresh = false) =>
+    request<RecordingHistorySummary>(
+      `/api/devices/${deviceId}/channels/${channelId}/recording-history${refresh ? '?refresh=1' : ''}`
+    ),
   files: (id: number, params: { track?: number; start?: string; end?: string; max?: number } = {}) => {
     const qs = new URLSearchParams();
     if (params.track) qs.set('track', String(params.track));

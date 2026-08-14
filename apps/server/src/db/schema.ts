@@ -38,3 +38,27 @@ export const channelLabels = sqliteTable(
 );
 
 export type ChannelLabelRow = typeof channelLabels.$inferSelect;
+
+// Cached recording-history summary per (device, channel) — how far back
+// recordings go and how many files were found. Scanning the device for
+// this is slow (it has to page through its whole search index), so the
+// result is cached here and only recomputed on an explicit refresh
+// (?refresh=1 on GET /:id/channels/:channelId/recording-history) rather
+// than on every page load.
+export const recordingHistory = sqliteTable(
+  'recording_history',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    deviceId: integer('device_id').notNull(),
+    channelId: integer('channel_id').notNull(),
+    earliestStart: text('earliest_start'),
+    fileCount: integer('file_count').notNull().default(0),
+    truncated: integer('truncated').notNull().default(0),
+    updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    deviceChannelUnique: unique().on(table.deviceId, table.channelId),
+  })
+);
+
+export type RecordingHistoryRow = typeof recordingHistory.$inferSelect;

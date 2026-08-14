@@ -36,6 +36,17 @@ sqlite.exec(`
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (device_id, channel_id)
   );
+
+  CREATE TABLE IF NOT EXISTS recording_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id INTEGER NOT NULL,
+    channel_id INTEGER NOT NULL,
+    earliest_start TEXT,
+    file_count INTEGER NOT NULL DEFAULT 0,
+    truncated INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (device_id, channel_id)
+  );
 `);
 
 export const db = drizzle(sqlite, { schema });

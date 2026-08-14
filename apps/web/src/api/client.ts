@@ -1,13 +1,23 @@
 import type { Device, DeviceInput, Channel, RecordingFile } from '@hik-mgr/shared';
 
+// Fired whenever any request comes back 401 (session missing/expired) so
+// App.tsx can drop back to the login page without every page needing its
+// own "am I still logged in?" plumbing — see the listener in App.tsx.
+const AUTH_EXPIRED_EVENT = 'hik-mgr:auth-expired';
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     headers: { 'Content-Type': 'application/json' },
     ...init,
   });
+  if (res.status === 401) {
+    window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body?.error ? JSON.stringify(body.error) : `Request failed: ${res.status}`);
+    const message =
+      typeof body?.error === 'string' ? body.error : body?.error ? JSON.stringify(body.error) : `Request failed: ${res.status}`;
+    throw new Error(message);
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
@@ -37,5 +47,23 @@ export const api = {
     const qs = new URLSearchParams({ t: String(Date.now()) });
     if (track) qs.set('track', String(track));
     return `/api/devices/${id}/snapshot?${qs.toString()}`;
+  },
+  auth: {
+    // Deliberately doesn't go through request() — a 401 here just means
+    // "not logged in yet", the normal/expected state on first load, not
+    // an error worth throwing or firing AUTH_EXPIRED_EVENT for (App.tsx's
+    // listener would otherwise fire immediately on every fresh page load).
+    me: async (): Promise<{ username: string } | null> => {
+      const res = await fetch('/api/auth/me');
+      if (res.status === 401) return null;
+      if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+      return res.json();
+    },
+    login: (username: string, password: string) =>
+      request<{ username: string }>('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ username, password }),
+      }),
+    logout: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
   },
 };

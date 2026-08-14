@@ -14,6 +14,7 @@
     "build": "yarn build:shared && yarn build:server && yarn build:web",
     "dev": "yarn build:shared && concurrently -n server,web -c blue,green \"yarn workspace @hik-mgr/server dev\" \"yarn workspace @hik-mgr/web dev\"",
     "start": "node apps/server/dist/index.js",
+    "serve": "yarn build && yarn start",
     "db:generate": "yarn workspace @hik-mgr/server db:generate",
     "db:studio": "yarn workspace @hik-mgr/server db:studio",
     "rebuild:native": "yarn workspace @hik-mgr/server rebuild:native",

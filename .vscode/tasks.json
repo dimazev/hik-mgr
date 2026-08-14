@@ -18,6 +18,19 @@
       "group": "build"
     },
     {
+      // What the single-port F5 config needs before it starts the server:
+      // packages/shared built (the web client imports it) and apps/web
+      // built into apps/web/dist (server.ts only serves static files /
+      // registers the catch-all route if that directory exists — skip
+      // this and hitting :4000 404s on everything but /api/*).
+      "label": "build: shared + web (for single-port server)",
+      "type": "shell",
+      "command": "yarn build:shared && yarn build:web",
+      "problemMatcher": ["$tsc"],
+      "presentation": { "reveal": "silent", "panel": "shared" },
+      "group": "build"
+    },
+    {
       "label": "build",
       "type": "shell",
       "command": "yarn build",
@@ -71,6 +84,18 @@
           "endsPattern": "ready in \\d+ ms"
         }
       }
+    },
+    {
+      // The single-port workflow: builds everything, then runs the server,
+      // which serves the built web client itself on :4000 alongside the
+      // API — no separate dev port, no proxy. Not a background task since
+      // there's nothing else to wait on before it's "ready" other than the
+      // build finishing.
+      "label": "serve (single port :4000)",
+      "type": "shell",
+      "command": "yarn serve",
+      "problemMatcher": ["$tsc"],
+      "presentation": { "reveal": "always", "panel": "dedicated", "group": "dev" }
     },
     {
       "label": "docker: up",

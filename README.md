@@ -63,14 +63,27 @@ yarn dev
 
 `yarn dev` builds `packages/shared` once, then runs the server (`tsx
 watch`, http://localhost:4000) and the Vite dev server
-(http://localhost:5173, proxying `/api` to the server) concurrently.
+(http://localhost:5173, proxying `/api` to the server) concurrently —
+two ports, with live-reload on both the server and the web client.
 
-For a production-style local run without Docker:
+### Single port (everything through :4000)
+
+If you'd rather not juggle two dev ports and just hit one URL for
+everything — build the web client once and let the Express server serve
+it directly, same as Docker/production does:
 
 ```bash
-yarn build
-yarn start   # serves both API and built web client on PORT (default 4000)
+yarn serve   # = yarn build && yarn start
 ```
+
+Then open **http://localhost:4000** for the app, same origin as the API
+— no proxy, no CORS concerns, nothing web-client-specific to configure
+(it already calls relative `/api/...` paths, so this just works). The
+tradeoff versus `yarn dev`: the web client isn't hot-reloading here, it's
+a static build — re-run `yarn build:web` (or `yarn serve` again) after
+changing anything under `apps/web/src`. The server itself still restarts
+on change if you swap the final step for `yarn workspace @hik-mgr/server
+dev` instead of `yarn start`.
 
 ## Scripts
 
@@ -82,6 +95,7 @@ Run from the repo root (`yarn <script>`) unless noted otherwise.
 | `yarn build` | Build `packages/shared`, then `apps/server`, then `apps/web`, in that order (each depends on the previous). |
 | `yarn build:shared` / `yarn build:server` / `yarn build:web` | Build just one workspace — useful when iterating on a single piece without rebuilding everything. |
 | `yarn start` | Run the already-built server (`node apps/server/dist/index.js`) — serves the API and, once `apps/web` is built, the web client too. Run `yarn build` first. |
+| `yarn serve` | `yarn build && yarn start` — the one-command "everything through :4000" workflow. See [Single port](#single-port-everything-through-4000) above. |
 | `yarn db:generate` | Runs `drizzle-kit generate` against `apps/server/src/db/schema.ts` — emits SQL migration files under `apps/server/drizzle/` for review. Not required for this MVP (the server creates its one table itself on startup via an inline `CREATE TABLE IF NOT EXISTS` — see `apps/server/src/db/client.ts`), but useful once schema changes need a real, reviewable migration instead of that inline statement. |
 | `yarn db:studio` | Opens [Drizzle Studio](https://orm.drizzle.team/drizzle-studio/overview), a local web UI for browsing/editing the SQLite database directly — handy for inspecting stored devices without writing SQL by hand. |
 | `yarn docker:build` | `docker compose build` — build the image without starting it. |
@@ -96,21 +110,33 @@ Open the `hik-mgr` folder in VS Code (not a parent folder — the paths in
 
 - **Terminal → Run Task…** exposes every `yarn` script in
   [Scripts](#scripts) above as a task (`build`, `build:shared`,
-  `dev: all (server+web)`, `web: dev`, `docker: up`, `docker: down`,
+  `build: shared + web (for single-port server)`, `dev: all (server+web)`,
+  `web: dev`, `serve (single port :4000)`, `docker: up`, `docker: down`,
   `db: studio`, `clean`, `install`), so you don't need a separate
   terminal for them.
-- **F5** (or the Run and Debug panel) offers:
-  - **Debug Server** — runs the API server directly under Node's
-    debugger via `tsx` (breakpoints work straight in the `.ts` sources,
-    no separate compile step). Automatically runs the `build:shared`
-    task first, since the server imports `@hik-mgr/shared`'s built
-    output.
-  - **Launch Web (Chrome)** — starts the Vite dev server (via the
-    `web: dev` task) and opens it in a debuggable Chrome window, with
-    breakpoints working in the `.tsx` sources.
-  - **Full Stack: Server + Web** (a compound of the two above) — the
-    one-press option: hit F5 once and both the server and the web
-    client come up, debugger attached to both.
+- **F5** (or the Run and Debug panel) — the **first/default** option is
+  **Debug Server (single port :4000, build + run + open browser)**: press
+  F5 and it builds `packages/shared` and `apps/web` (so the server has
+  something to serve — without this, `apps/web/dist` doesn't exist and
+  hitting `:4000` 404s on everything except `/api/...`), launches the
+  server directly under Node's debugger via `tsx` (breakpoints work
+  straight in the `.ts` sources, no separate server compile step), and
+  once it actually logs that it's listening, opens
+  **http://localhost:4000** in your browser automatically. One key press,
+  everything running, fully debuggable.
+
+  Other configs, for different workflows:
+  - **Debug Server (API only, no web build)** — same debugger setup but
+    skips building `apps/web`, for faster iteration when you only care
+    about the API (`:4000/api/...` works, `:4000/` 404s unless a web
+    build already exists from earlier).
+  - **Launch Web (Chrome, :5173 dev server)** — starts the Vite dev
+    server (hot-reload) and opens it in a debuggable Chrome window;
+    needs the server running separately (e.g. the "API only" config
+    above).
+  - **Full Stack (two ports): Server + Web** — a compound of the two
+    above, for active web development with hot-reload plus debugging on
+    both sides at once.
   - **Attach to Server (port 9229)** — attach to a server you already
     started yourself in a terminal (e.g. via `yarn dev`), instead of
     launching a new one. Needs that process to actually be listening on
@@ -121,8 +147,10 @@ Open the `hik-mgr` folder in VS Code (not a parent folder — the paths in
 | Variable      | Default                    | Notes                                                            |
 | ------------- | --------------------------- | ------------------------------------------------------------------ |
 | `PORT`        | `4000`                      | Server port.                                                       |
-| `APP_SECRET`  | *(insecure dev default)*    | Key material for encrypting stored device passwords. Set this to a real random value for any real deployment — changing it later makes previously stored passwords undecryptable. |
+| `APP_SECRET`  | *(insecure dev default)*    | Key material for encrypting stored device passwords **and** signing login session cookies. Set this to a real random value for any real deployment — changing it later makes previously stored passwords undecryptable and logs everyone out. |
 | `DB_PATH`     | `./data/hik-mgr.sqlite`     | SQLite file location. In Docker this is `/app/data/hik-mgr.sqlite`, on the `data` volume. |
+| `ADMIN_USERNAME` | `admin`                  | Login username for the whole app (see [Authentication](#authentication)). |
+| `ADMIN_PASSWORD` | *(insecure dev default)* | Login password. Set a real value before running this anywhere beyond your own machine. |
 | `HIK_NAME`    | *(unset)*                    | Optional. Display name for the seed device (see below). Defaults to `HIK_HOST` if unset. |
 | `HIK_HOST`    | *(unset)*                    | Optional. Hikvision device host, e.g. `b22.kozow.com`. |
 | `HIK_PORT`    | `80`                         | Optional. |
@@ -144,10 +172,47 @@ mechanism — once any device exists, changing `HIK_*` later has no effect.
 Delete all devices via the UI/API first if you want it to reseed on next
 start.
 
+## Authentication
+
+The whole app sits behind a single login — this isn't multi-user, it's
+one admin account (`ADMIN_USERNAME`/`ADMIN_PASSWORD` in `.env`) gating
+access to every device and every API route under `/api/devices`. Opening
+the web app with no valid session shows a login page instead of the
+device list; `/api/health` stays open (for infra health checks) and
+`/api/auth/login` obviously has to be reachable before you have a
+session, but everything else requires one.
+
+How it works: `POST /api/auth/login` checks the submitted credentials
+against `.env` (constant-time comparison, not stored anywhere else — no
+user table, no password hashing at rest, since there's exactly one
+account and it lives in `.env` like every other credential in this
+project) and, on success, sets an httpOnly cookie containing a small
+signed token (HMAC'd with `APP_SECRET`, 7-day expiry) — no server-side
+session store needed, the cookie itself is the session. `GET
+/api/auth/me` (used by the web client on load) and `POST
+/api/auth/logout` round out the API; see [API](#api) below.
+
+Practical notes:
+- Changing `APP_SECRET` invalidates every existing session (the HMAC no
+  longer verifies), same as it invalidates stored device passwords — see
+  the config table above.
+- The cookie is `sameSite: 'lax'` and only requires HTTPS in production
+  (`NODE_ENV=production`, which the Dockerfile sets) — plain `http://` on
+  `yarn dev`/`yarn serve` still works.
+- This assumes the web client and API are same-origin, true for every
+  documented setup here (`yarn serve`'s single port, Docker, and `yarn
+  dev`'s Vite proxy). Opening the web app from a genuinely different
+  origin than the API wouldn't carry the cookie without additional CORS
+  configuration — out of scope for this MVP.
+
 ## API
 
-All endpoints are under `/api`.
+All endpoints are under `/api`. Everything under `/api/devices` requires
+a valid login session — see [Authentication](#authentication).
 
+- `POST /api/auth/login` — `{ username, password }` → `{ username }` and sets the session cookie, or `401` on bad credentials.
+- `POST /api/auth/logout` — clears the session cookie.
+- `GET /api/auth/me` — `{ username }` if logged in, `401` otherwise. Used by the web client on load to decide login page vs. app.
 - `GET /api/devices` — list devices (no passwords included).
 - `POST /api/devices` — add a device: `{ name, host, port?, protocol?, username?, password }`.
 - `PUT /api/devices/:id` — update any subset of the same fields.

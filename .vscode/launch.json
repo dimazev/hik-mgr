@@ -2,14 +2,41 @@
   "version": "0.2.0",
   "configurations": [
     {
-      // F5 target for the API server: runs it directly under Node's
-      // debugger via tsx (no separate compile step, breakpoints work
-      // straight in the .ts sources). Equivalent to
-      // `node --import tsx ./apps/server/src/index.ts`, just with the
-      // debugger attached from the start.
+      // DEFAULT F5 TARGET (first in this list). Builds packages/shared and
+      // apps/web first (via the preLaunchTask — apps/web/dist has to exist
+      // or server.ts never registers static/catch-all routes, which is
+      // exactly why hitting :4000 was 404ing before this config existed),
+      // then launches the server directly under Node's debugger via tsx
+      // (breakpoints work straight in the .ts sources, no separate server
+      // compile step). Once the server actually logs that it's listening,
+      // serverReadyAction opens it in your browser automatically — press
+      // F5 and everything (build, run, browser) happens on its own.
       "type": "node",
       "request": "launch",
-      "name": "Debug Server",
+      "name": "Debug Server (single port :4000, build + run + open browser)",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--import", "tsx", "./apps/server/src/index.ts"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"],
+      "preLaunchTask": "build: shared + web (for single-port server)",
+      "restart": true,
+      "serverReadyAction": {
+        "pattern": "hik-mgr server listening on (https?://\\S+)",
+        "uriFormat": "%s",
+        "action": "openExternally"
+      }
+    },
+    {
+      // Faster alternative when you only care about the API and don't
+      // need the web client served: same debugger setup, but only builds
+      // packages/shared first, not apps/web. Hitting :4000/api/... works;
+      // :4000/ (the web app) 404s unless apps/web/dist already exists
+      // from an earlier build.
+      "type": "node",
+      "request": "launch",
+      "name": "Debug Server (API only, no web build)",
       "runtimeExecutable": "node",
       "runtimeArgs": ["--import", "tsx", "./apps/server/src/index.ts"],
       "cwd": "${workspaceFolder}",
@@ -34,12 +61,17 @@
       "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
     },
     {
-      // F5 target for the web client: starts the Vite dev server (via the
-      // "web: dev" task) and opens it in a debuggable Chrome instance,
-      // with breakpoints working directly in the .tsx sources.
+      // For active web development with hot-reload: starts the Vite dev
+      // server on :5173 (via the "web: dev" task, proxying /api to :4000
+      // — the server itself needs to be running separately, e.g. via
+      // "Debug Server (API only, no web build)" above) and opens it in a
+      // debuggable Chrome instance, breakpoints working in the .tsx
+      // sources directly. Not part of the single-port setup — this is the
+      // two-port dev workflow (see the "Full Stack (two ports)" compound
+      // below to run both at once).
       "type": "chrome",
       "request": "launch",
-      "name": "Launch Web (Chrome)",
+      "name": "Launch Web (Chrome, :5173 dev server)",
       "url": "http://localhost:5173",
       "webRoot": "${workspaceFolder}/apps/web",
       "sourceMapPathOverrides": {
@@ -52,11 +84,12 @@
   ],
   "compounds": [
     {
-      // The full F5 experience: API server + web client + browser, all at
-      // once, all debuggable. Pick this in the Run and Debug dropdown
-      // (or make it the first item to have it be F5's default).
-      "name": "Full Stack: Server + Web",
-      "configurations": ["Debug Server", "Launch Web (Chrome)"],
+      // The two-port dev workflow, both debuggable at once: API server +
+      // Vite dev server + browser. Prefer the single-port config above
+      // for a plain "F5 and it just works" experience — use this one
+      // specifically when you want the web client's hot-reload.
+      "name": "Full Stack (two ports): Server + Web",
+      "configurations": ["Debug Server (API only, no web build)", "Launch Web (Chrome, :5173 dev server)"],
       "stopAll": true
     }
   ]

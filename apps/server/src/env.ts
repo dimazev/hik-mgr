@@ -70,4 +70,10 @@ export const env = {
   appSecret: required('APP_SECRET', 'dev-only-insecure-secret-change-me'),
   dbPath: resolveDbPath(),
   hikDefault: hikDefault(),
+  // Single-admin login gating the whole app (see auth.ts / api/auth.ts).
+  // Same insecure-default-with-a-warning pattern as APP_SECRET, so a
+  // fresh checkout is usable immediately — change these in .env before
+  // exposing this anywhere beyond your own machine.
+  adminUsername: process.env.ADMIN_USERNAME || 'admin',
+  adminPassword: required('ADMIN_PASSWORD', 'dev-only-insecure-password-change-me'),
 };

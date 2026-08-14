@@ -72,14 +72,22 @@ export interface DeviceStatus {
  */
 export interface RecordingHistorySummary {
   channelId: number;
-  /** Earliest recording start time found, or null if the channel has no recordings. */
+  /** Earliest recording start time found, or null if the channel has no recordings (or it hasn't been scanned yet). */
   earliestStart: string | null;
-  /** Number of recording files found (capped by the scan's maxResults — see `truncated`). */
-  fileCount: number;
+  /** Number of recording files found (capped by the scan's maxResults — see `truncated`). Null if not scanned yet. */
+  fileCount: number | null;
   /** True if the scan hit its result cap and there may be more/older recordings than counted. */
   truncated: boolean;
-  /** When this summary was last computed. */
-  updatedAt: string;
+  /** When this summary was last computed, or null if it hasn't been scanned yet. */
+  updatedAt: string | null;
+  /**
+   * False if this channel has never been scanned — a device recording-index
+   * scan is relatively slow, so it only happens for a channel the user
+   * explicitly asks to scan (via ?refresh=1), never automatically for every
+   * channel just because a page listing channels was opened. Everything
+   * else on this object is a placeholder when this is false.
+   */
+  scanned: boolean;
 }
 
 // --- Download tasks -------------------------------------------------------

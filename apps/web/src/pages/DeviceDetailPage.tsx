@@ -292,10 +292,18 @@ function RecordingHistoryLine({ deviceId, channel }: { deviceId: number; channel
   const { summary, loading, error, refresh } = useRecordingHistory(deviceId, Number(channel.id));
   const { t, locale } = useLocale();
 
+  // A device-wide recording-index scan is slow, so the server never runs
+  // one just because this line was rendered — it only returns a cached
+  // result, or a `scanned: false` placeholder if this channel has never
+  // been scanned. `refresh()` is what actually asks the server to scan
+  // *this one channel* (?refresh=1) — nothing here ever triggers scanning
+  // every channel at once just by opening the tab.
+  const notScannedYet = summary && !summary.scanned;
+
   return (
     <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mt: 1 }}>
       <VideoLibraryIcon fontSize="small" color="action" />
-      {loading && !summary ? (
+      {loading ? (
         <>
           <CircularProgress size={12} />
           <Typography variant="caption" color="text.secondary">
@@ -305,6 +313,10 @@ function RecordingHistoryLine({ deviceId, channel }: { deviceId: number; channel
       ) : error && !summary ? (
         <Typography variant="caption" color="error">
           {error}
+        </Typography>
+      ) : notScannedYet ? (
+        <Typography variant="caption" color="text.secondary">
+          {t('recordingHistory.notScanned')}
         </Typography>
       ) : summary ? (
         <Typography variant="caption" color="text.secondary">
@@ -320,11 +332,17 @@ function RecordingHistoryLine({ deviceId, channel }: { deviceId: number; channel
           {t('recordingHistory.unavailable')}
         </Typography>
       )}
-      <Tooltip title={t('recordingHistory.rescanTooltip')}>
-        <IconButton aria-label={t('recordingHistory.refreshAria')} size="small" onClick={refresh} disabled={loading}>
-          <RefreshIcon sx={{ fontSize: 14 }} />
-        </IconButton>
-      </Tooltip>
+      {notScannedYet ? (
+        <Button size="small" onClick={refresh} disabled={loading} startIcon={<RefreshIcon sx={{ fontSize: 14 }} />}>
+          {t('recordingHistory.scanButton')}
+        </Button>
+      ) : (
+        <Tooltip title={t('recordingHistory.rescanTooltip')}>
+          <IconButton aria-label={t('recordingHistory.refreshAria')} size="small" onClick={refresh} disabled={loading}>
+            <RefreshIcon sx={{ fontSize: 14 }} />
+          </IconButton>
+        </Tooltip>
+      )}
     </Stack>
   );
 }
@@ -596,7 +614,7 @@ function RecordingsTab({ id }: { id: number }) {
   const files = q.data?.files ?? [];
   const counts = new Map<string, number>();
   for (const f of files) {
-    const key = f.deviceChannelName ?? 'Unknown channel';
+    const key = f.deviceChannelName ?? t('common.unknownChannel');
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
 

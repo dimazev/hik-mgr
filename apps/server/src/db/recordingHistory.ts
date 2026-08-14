@@ -19,6 +19,7 @@ export function getRecordingHistory(deviceId: number, channelId: number): Record
     fileCount: row.fileCount,
     truncated: !!row.truncated,
     updatedAt: row.updatedAt,
+    scanned: true,
   };
 }
 
@@ -26,8 +27,18 @@ export function getRecordingHistory(deviceId: number, channelId: number): Record
  * Upserts the cached recording-history summary for one channel. Same
  * upsert-on-unique-constraint pattern as setChannelLabel — single atomic
  * statement whether or not a row already exists.
+ *
+ * Takes the narrower "actually scanned" shape rather than the full
+ * (nullable-friendly) RecordingHistorySummary — the DB columns for
+ * fileCount/updatedAt are NOT NULL, and the only caller is the code path
+ * that just finished a real scan, so those values are always present there.
+ * The `scanned: false` placeholder (never-scanned-yet channels) is
+ * constructed inline where it's used and never persisted.
  */
-export function saveRecordingHistory(deviceId: number, summary: RecordingHistorySummary): void {
+export function saveRecordingHistory(
+  deviceId: number,
+  summary: { channelId: number; earliestStart: string | null; fileCount: number; truncated: boolean; updatedAt: string }
+): void {
   const updatedAt = summary.updatedAt;
 
   db.insert(recordingHistory)

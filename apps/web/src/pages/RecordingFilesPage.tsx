@@ -26,7 +26,7 @@ import { api } from '../api/client';
 import { useLocale } from '../i18n/LocaleContext';
 
 function sanitizeForFilename(s: string): string {
-  return s.replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'channel';
+  return s.replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'camera';
 }
 
 /**
@@ -37,7 +37,7 @@ function sanitizeForFilename(s: string): string {
  */
 function friendlyFileName(channelName: string | null | undefined, startTime: string | undefined, index: number): string {
   const start = startTime ? startTime.replace(/:/g, '-') : `file-${index}`;
-  return `${sanitizeForFilename(channelName || 'channel')}_${start}.mp4`;
+  return `${sanitizeForFilename(channelName || 'camera')}_${start}.mp4`;
 }
 
 function formatDateTime(iso: string, locale: string): string {
@@ -87,7 +87,7 @@ export default function RecordingFilesPage() {
   });
 
   const files = q.data?.files ?? [];
-  const channelNames = new Set(files.map((f) => f.deviceChannelName ?? 'Unknown channel'));
+  const channelNames = new Set(files.map((f) => f.deviceChannelName ?? t('common.unknownChannel')));
 
   const createTaskMutation = useMutation({
     mutationFn: (payload: DownloadTaskFileInput[]) => api.createDownloadTask(deviceId, payload),
@@ -98,7 +98,7 @@ export default function RecordingFilesPage() {
     setConfirmOpen(false);
     const payload: DownloadTaskFileInput[] = files.map((f, i) => ({
       channelId: Math.floor(Number(f.trackID) / 100),
-      channelName: f.deviceChannelName || 'Unknown channel',
+      channelName: f.deviceChannelName || t('common.unknownChannel'),
       playbackURI: f.playbackURI,
       filename: friendlyFileName(f.deviceChannelName, f.startTime, i),
       startTime: f.startTime ?? null,

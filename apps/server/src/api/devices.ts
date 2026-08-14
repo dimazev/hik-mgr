@@ -231,6 +231,14 @@ router.get(
         res.json(cached);
         return;
       }
+      // Never scanned yet, and this request isn't an explicit "go scan it"
+      // — the scan below hits the device's whole recording index (slow),
+      // so it only ever runs for a channel the caller specifically asked
+      // for (refresh=1), not as a side effect of merely loading this page.
+      // Without this early return, opening a device with many channels
+      // would fire one full-index scan per channel, all at once.
+      res.json({ channelId, earliestStart: null, fileCount: null, truncated: false, updatedAt: null, scanned: false });
+      return;
     }
 
     const trackID = channelId * 100 + 1;
@@ -252,6 +260,7 @@ router.get(
       fileCount: result.numOfMatches,
       truncated: result.truncated,
       updatedAt: new Date().toISOString(),
+      scanned: true,
     };
 
     saveRecordingHistory(deviceId, summary);
@@ -303,12 +312,16 @@ router.get(
     // reports (or, if channelFilter is set, only the requested ones), same
     // "search all devices/channels by default" behavior as hik-connect's
     // list-files command, tagging each match with the channel name it
-    // came from.
+    // came from. Prefer the user's custom label (same one shown/edited on
+    // the Channels tab) over the device's own raw channel name, so this
+    // list reads the same way everywhere in the app — falls back to the
+    // device name for channels that were never labeled.
+    const labels = getLabelsForDevice(deviceId);
     let channelList: { id: number; name: string }[] = [];
     try {
       const { channels } = await listChannels(conn);
       channelList = channels
-        .map((c) => ({ id: Number(c.id), name: c.name }))
+        .map((c) => ({ id: Number(c.id), name: labels.get(Number(c.id)) || c.name }))
         .filter((c) => !channelFilter || channelFilter.has(c.id));
     } catch {
       // No separate channel list available — fall back to the single

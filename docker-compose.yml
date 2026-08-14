@@ -36,25 +36,55 @@ services:
       # it installs (python3/make/g++/ffmpeg).
       - .:/app
       # node_modules is deliberately carved back out of the bind mount
-      # above via anonymous volumes: without them, the container would see
-      # whatever node_modules happens to be sitting in the repo on the
-      # host (e.g. from running `yarn install` locally on macOS), and
-      # native modules like better-sqlite3 are compiled per-OS/arch — a
-      # macOS build won't load inside this Linux container.
+      # above: without this, the container would see whatever node_modules
+      # happens to be sitting in the repo on the host (e.g. from running
+      # `yarn install` locally on macOS), and native modules like
+      # better-sqlite3 are compiled per-OS/arch — a macOS build won't load
+      # inside this Linux container.
+      #
+      # One named volume (`node_modules_cache`, declared at the bottom of
+      # this file) backs all four node_modules locations this workspace
+      # needs, each isolated via a distinct `subpath` — so root,
+      # packages/shared, apps/server, and apps/web each get their own
+      # subfolder within that single volume instead of colliding. This
+      # needs Docker Engine 25+ / a reasonably current Docker
+      # Desktop for the `subpath` field — if `docker compose up` rejects
+      # it as an unknown option, upgrade Docker Desktop, or fall back to
+      # four separate anonymous volume entries (`/app/node_modules`,
+      # `/app/packages/shared/node_modules`, etc., one per line) instead.
       #
       # This used to be `tmpfs` instead, on the theory that RAM-backed
       # mounts don't persist across a restart the way a volume does — but
       # tmpfs turned out to break yarn install outright: some Docker
       # setups mount tmpfs `noexec`, and yarn needs to execute the
       # binaries it just installed (esbuild, etc.) to verify them, which
-      # failed with EACCES. A regular anonymous volume doesn't have that
-      # restriction, so "don't persist across restarts" is instead
-      # enforced explicitly in bootstrap.sh (which rm -rf's these
+      # failed with EACCES. A regular named/anonymous volume doesn't have
+      # that restriction, so "don't persist across restarts" is instead
+      # enforced explicitly in bootstrap.sh (which empties these
       # directories before every yarn install) rather than relying on the
       # mount type itself to provide that.
-      - /app/node_modules
-      - /app/packages/shared/node_modules
-      - /app/apps/server/node_modules
-      - /app/apps/web/node_modules
+      - type: volume
+        source: node_modules_cache
+        target: /app/node_modules
+        volume:
+          subpath: root
+      - type: volume
+        source: node_modules_cache
+        target: /app/packages/shared/node_modules
+        volume:
+          subpath: shared
+      - type: volume
+        source: node_modules_cache
+        target: /app/apps/server/node_modules
+        volume:
+          subpath: server
+      - type: volume
+        source: node_modules_cache
+        target: /app/apps/web/node_modules
+        volume:
+          subpath: web
       - ./data:/app/data
     restart: unless-stopped
+
+volumes:
+  node_modules_cache:

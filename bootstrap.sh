@@ -9,15 +9,24 @@ set -e
 # risk being a precompiled binary baked in under one environment and then
 # loaded under a subtly different one.
 
-# node_modules lives on regular (exec-capable) anonymous volumes — see
+# node_modules lives on regular (exec-capable) volume mounts — see
 # docker-compose.yml for why not tmpfs — which DO persist across a
 # `docker compose restart` by default. To get "never reuse packages from a
-# previous run" anyway, wipe them explicitly before every install rather
-# than relying on the mount type to do it. rm -rf on an empty/nonexistent
-# dir is a harmless no-op, so this is safe on a container's very first
-# start too.
+# previous run" anyway, empty them explicitly before every install rather
+# than relying on the mount type to do it.
+#
+# `find -mindepth 1 -delete` (not `rm -rf <dir>`) deliberately clears each
+# directory's *contents* without removing the directory itself — these
+# paths are active mount points (see docker-compose.yml's `subpath`
+# volumes), and `rm -rf` trying to remove a mount point out from under
+# itself would fail with "device busy" and — since this script runs with
+# set -e — abort the whole bootstrap. mkdir -p first covers a directory
+# that doesn't exist yet (a container's very first start).
 echo "[bootstrap] clearing node_modules for a genuinely fresh install..."
-rm -rf node_modules packages/shared/node_modules apps/server/node_modules apps/web/node_modules
+for dir in node_modules packages/shared/node_modules apps/server/node_modules apps/web/node_modules; do
+  mkdir -p "$dir"
+  find "$dir" -mindepth 1 -delete
+done
 
 echo "[bootstrap] installing dependencies (yarn install, from yarn.lock)..."
 corepack enable

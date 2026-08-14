@@ -66,5 +66,9 @@ services:
       # persist across restarts" is instead enforced explicitly in
       # bootstrap.sh (which empties these directories before every yarn
       # install) rather than relying on the mount type to provide that.
+      - /app/node_modules
+      - /app/packages/shared/node_modules
+      - /app/apps/server/node_modules
+      - /app/apps/web/node_modules
       - ./data:/app/data
     restart: unless-stopped

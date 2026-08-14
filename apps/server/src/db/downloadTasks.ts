@@ -10,7 +10,7 @@ import type {
 import { db } from './client';
 import { devices, downloadTaskFiles, downloadTasks, type DownloadTaskFileRow, type DownloadTaskRow } from './schema';
 
-function toPublicTask(row: DownloadTaskRow, deviceName: string): DownloadTask {
+function toPublicTask(row: DownloadTaskRow, deviceName: string, channelNames: string[]): DownloadTask {
   return {
     id: row.id,
     deviceId: row.deviceId,
@@ -21,7 +21,21 @@ function toPublicTask(row: DownloadTaskRow, deviceName: string): DownloadTask {
     failedFiles: row.failedFiles,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    channelNames,
   };
+}
+
+/** Distinct channelName values for a set of files, in first-appearance order (by id). */
+function distinctChannelNames(fileRows: { channelName: string }[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const f of fileRows) {
+    if (!seen.has(f.channelName)) {
+      seen.add(f.channelName);
+      out.push(f.channelName);
+    }
+  }
+  return out;
 }
 
 function toPublicFile(row: DownloadTaskFileRow) {
@@ -81,8 +95,24 @@ export function listDownloadTasks(): DownloadTask[] {
     .leftJoin(devices, eq(downloadTasks.deviceId, devices.id))
     .all();
 
+  // One query for all files across every task (cheap — just id/taskId/
+  // channelName), grouped in JS, rather than N+1 queries per task just to
+  // show which camera(s) each task covers in the list view.
+  const allFileRows = db
+    .select({ taskId: downloadTaskFiles.taskId, channelName: downloadTaskFiles.channelName })
+    .from(downloadTaskFiles)
+    .all();
+  const filesByTask = new Map<number, { channelName: string }[]>();
+  for (const f of allFileRows) {
+    const list = filesByTask.get(f.taskId) ?? [];
+    list.push(f);
+    filesByTask.set(f.taskId, list);
+  }
+
   return rows
-    .map((r) => toPublicTask(r.task, r.deviceName ?? `Device #${r.task.deviceId}`))
+    .map((r) =>
+      toPublicTask(r.task, r.deviceName ?? `Device #${r.task.deviceId}`, distinctChannelNames(filesByTask.get(r.task.id) ?? []))
+    )
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : b.id - a.id));
 }
 
@@ -94,7 +124,7 @@ export function getDownloadTask(taskId: number): DownloadTaskDetail | undefined 
   const fileRows = db.select().from(downloadTaskFiles).where(eq(downloadTaskFiles.taskId, taskId)).all();
 
   return {
-    ...toPublicTask(row, deviceRow?.name ?? `Device #${row.deviceId}`),
+    ...toPublicTask(row, deviceRow?.name ?? `Device #${row.deviceId}`, distinctChannelNames(fileRows)),
     files: fileRows.map(toPublicFile),
   };
 }

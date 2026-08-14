@@ -44,6 +44,9 @@ export const translations: Record<Locale, Record<string, string>> = {
     'snapshot.noSnapshot': 'No snapshot',
     'snapshot.refreshAria': 'Refresh snapshot',
     'snapshot.errorTooltip': 'Snapshot refresh failed, showing the last successful one. {error}',
+    'snapshot.focusAria': 'Watch live (refreshes every second)',
+    'snapshot.unfocusAria': 'Stop watching live',
+    'snapshot.live': 'LIVE',
 
     'channel.label': 'Label',
     'channel.saveLabelAria': 'Save label',
@@ -126,6 +129,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     'tasks.etaLessThanMin': '<1 min left',
     'tasks.etaMinutesOne': '~{mins} min left',
     'tasks.etaMinutesOther': '~{mins} mins left',
+    'tasks.multipleCameras': '{count} cameras',
 
     'status.pending': 'pending',
     'status.running': 'running',
@@ -173,6 +177,9 @@ export const translations: Record<Locale, Record<string, string>> = {
     'snapshot.noSnapshot': 'אין תמונה',
     'snapshot.refreshAria': 'רענון תמונה',
     'snapshot.errorTooltip': 'רענון התמונה נכשל, מוצגת התמונה האחרונה שהצליחה. {error}',
+    'snapshot.focusAria': 'צפייה חיה (מתרענן כל שנייה)',
+    'snapshot.unfocusAria': 'הפסקת צפייה חיה',
+    'snapshot.live': 'שידור חי',
 
     'channel.label': 'תווית',
     'channel.saveLabelAria': 'שמירת תווית',
@@ -255,6 +262,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     'tasks.etaLessThanMin': 'פחות מדקה נותרה',
     'tasks.etaMinutesOne': '~{mins} דקה נותרה',
     'tasks.etaMinutesOther': '~{mins} דקות נותרו',
+    'tasks.multipleCameras': '{count} מצלמות',
 
     'status.pending': 'ממתין',
     'status.running': 'פעיל',

@@ -245,7 +245,13 @@ function TaskRow({ task }: { task: DownloadTask }) {
   return (
     <>
       <TableRow hover sx={{ cursor: 'pointer' }} onClick={() => setExpanded((e) => !e)}>
-        <TableCell>{task.id}</TableCell>
+        <TableCell>
+          {task.channelNames.length === 0
+            ? '—'
+            : task.channelNames.length === 1
+              ? task.channelNames[0]
+              : t('tasks.multipleCameras', { count: task.channelNames.length })}
+        </TableCell>
         <TableCell>{task.deviceName}</TableCell>
         <TableCell>{formatDateTime(task.createdAt, locale)}</TableCell>
         <TableCell>
@@ -380,7 +386,7 @@ export default function TasksPage() {
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>{t('channels.colId')}</TableCell>
+                <TableCell>{t('recordings.colChannel')}</TableCell>
                 <TableCell>{t('tasks.colDevice')}</TableCell>
                 <TableCell>{t('tasks.colCreated')}</TableCell>
                 <TableCell>{t('deviceDetail.tabStatus')}</TableCell>

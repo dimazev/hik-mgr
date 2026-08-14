@@ -68,8 +68,14 @@ function delay(ms: number): Promise<void> {
  * A single request failure (e.g. a transient 500 while the device is busy)
  * is retried up to SNAPSHOT_MAX_ATTEMPTS times before giving up and
  * surfacing `error`.
+ *
+ * `focused` opts this one snapshot into a 1s auto-refresh loop (see the
+ * effect below) — every other, unfocused camera on the page keeps loading
+ * its snapshot only once (or on manual refresh), so selecting one camera
+ * to "watch live" doesn't multiply the device's snapshot load by however
+ * many cameras happen to be on screen.
  */
-function useSnapshot(deviceId: number, track: number) {
+function useSnapshot(deviceId: number, track: number, focused: boolean) {
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -126,6 +132,16 @@ function useSnapshot(deviceId: number, track: number) {
     };
   }, []);
 
+  // While focused, re-trigger the fetch effect above once a second by
+  // bumping `attempt` — same request/retry/object-URL-swap path as a
+  // manual refresh, just on a timer. Stops immediately when `focused`
+  // goes false (camera deselected, or another camera becomes focused).
+  useEffect(() => {
+    if (!focused) return;
+    const interval = setInterval(() => setAttempt((n) => n + 1), 1000);
+    return () => clearInterval(interval);
+  }, [focused]);
+
   return { url, error, loading, refresh: () => setAttempt((n) => n + 1) };
 }
 
@@ -135,58 +151,99 @@ function SnapshotImage({
   alt,
   sx,
   showRefresh = true,
+  focused = false,
+  onToggleFocus,
 }: {
   deviceId: number;
   track: number;
   alt: string;
   sx?: SxProps<Theme>;
   showRefresh?: boolean;
+  /** True while this camera is the one selected to auto-refresh every second — see useSnapshot. */
+  focused?: boolean;
+  /** Omit to make this snapshot unselectable. */
+  onToggleFocus?: () => void;
 }) {
-  const { url, error, loading, refresh } = useSnapshot(deviceId, track);
+  const { url, error, loading, refresh } = useSnapshot(deviceId, track, focused);
   const { t } = useLocale();
 
+  const clickable = !!onToggleFocus;
+
   return (
-    <Box sx={{ position: 'relative', overflow: 'hidden', bgcolor: 'grey.200', ...sx }}>
-      {url ? (
-        <Box component="img" src={url} alt={alt} sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-      ) : (
-        <Box sx={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {loading ? (
-            <CircularProgress size={18} />
-          ) : (
-            <Typography variant="caption" color="text.secondary">
-              {t('snapshot.noSnapshot')}
-            </Typography>
-          )}
-        </Box>
-      )}
-      {error && (
-        <Tooltip title={t('snapshot.errorTooltip', { error })}>
-          <WarningAmberIcon
-            fontSize="small"
-            color="warning"
-            sx={{ position: 'absolute', top: 4, left: 4, bgcolor: 'background.paper', borderRadius: '50%', p: 0.25 }}
+    <Tooltip title={clickable ? t(focused ? 'snapshot.unfocusAria' : 'snapshot.focusAria') : ''} disableHoverListener={!clickable}>
+      <Box
+        sx={{
+          position: 'relative',
+          overflow: 'hidden',
+          bgcolor: 'grey.200',
+          cursor: clickable ? 'pointer' : undefined,
+          outline: focused ? '2px solid' : 'none',
+          outlineColor: 'error.main',
+          outlineOffset: '-2px',
+          ...sx,
+        }}
+        onClick={onToggleFocus}
+      >
+        {url ? (
+          <Box component="img" src={url} alt={alt} sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        ) : (
+          <Box sx={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {loading ? (
+              <CircularProgress size={18} />
+            ) : (
+              <Typography variant="caption" color="text.secondary">
+                {t('snapshot.noSnapshot')}
+              </Typography>
+            )}
+          </Box>
+        )}
+        {error && (
+          <Tooltip title={t('snapshot.errorTooltip', { error })}>
+            <WarningAmberIcon
+              fontSize="small"
+              color="warning"
+              sx={{ position: 'absolute', top: 4, left: 4, bgcolor: 'background.paper', borderRadius: '50%', p: 0.25 }}
+            />
+          </Tooltip>
+        )}
+        {focused && (
+          <Chip
+            size="small"
+            color="error"
+            label={t('snapshot.live')}
+            sx={{
+              position: 'absolute',
+              bottom: 4,
+              left: 4,
+              height: 18,
+              '& .MuiChip-label': { px: 0.75, fontSize: 10, fontWeight: 600 },
+            }}
           />
-        </Tooltip>
-      )}
-      {showRefresh && (
-        <IconButton
-          aria-label={t('snapshot.refreshAria')}
-          size="small"
-          onClick={refresh}
-          disabled={loading}
-          sx={{
-            position: 'absolute',
-            top: 4,
-            right: 4,
-            bgcolor: 'background.paper',
-            '&:hover': { bgcolor: 'background.paper' },
-          }}
-        >
-          <RefreshIcon fontSize="small" />
-        </IconButton>
-      )}
-    </Box>
+        )}
+        {showRefresh && (
+          <IconButton
+            aria-label={t('snapshot.refreshAria')}
+            size="small"
+            onClick={(e) => {
+              // Manual refresh shouldn't also toggle focus — it sits inside
+              // the same clickable box as the focus toggle above.
+              e.stopPropagation();
+              refresh();
+            }}
+            disabled={loading}
+            sx={{
+              position: 'absolute',
+              top: 4,
+              right: 4,
+              bgcolor: 'background.paper',
+              '&:hover': { bgcolor: 'background.paper' },
+            }}
+          >
+            <RefreshIcon fontSize="small" />
+          </IconButton>
+        )}
+      </Box>
+    </Tooltip>
   );
 }
 
@@ -347,7 +404,17 @@ function RecordingHistoryLine({ deviceId, channel }: { deviceId: number; channel
   );
 }
 
-function ChannelCard({ deviceId, channel }: { deviceId: number; channel: Channel }) {
+function ChannelCard({
+  deviceId,
+  channel,
+  focused,
+  onToggleFocus,
+}: {
+  deviceId: number;
+  channel: Channel;
+  focused: boolean;
+  onToggleFocus: () => void;
+}) {
   const { label, setLabel, dirty, save, isSaving, error } = useChannelLabelEditor(deviceId, channel);
   const { t } = useLocale();
   const track = Number(channel.id) * 100 + 1;
@@ -360,6 +427,8 @@ function ChannelCard({ deviceId, channel }: { deviceId: number; channel: Channel
         track={track}
         alt={`Snapshot of ${displayName}`}
         sx={{ width: '100%', aspectRatio: '4 / 3', borderRadius: 1, mb: 1.5 }}
+        focused={focused}
+        onToggleFocus={onToggleFocus}
       />
       <Stack direction="row" spacing={1} alignItems="flex-start">
         <TextField
@@ -399,7 +468,17 @@ function ChannelCard({ deviceId, channel }: { deviceId: number; channel: Channel
   );
 }
 
-function ChannelListRow({ deviceId, channel }: { deviceId: number; channel: Channel }) {
+function ChannelListRow({
+  deviceId,
+  channel,
+  focused,
+  onToggleFocus,
+}: {
+  deviceId: number;
+  channel: Channel;
+  focused: boolean;
+  onToggleFocus: () => void;
+}) {
   const { label, setLabel, dirty, save, isSaving, error } = useChannelLabelEditor(deviceId, channel);
   const { t } = useLocale();
   const track = Number(channel.id) * 100 + 1;
@@ -414,6 +493,8 @@ function ChannelListRow({ deviceId, channel }: { deviceId: number; channel: Chan
           alt={`Snapshot of ${displayName}`}
           sx={{ width: 72, height: 54, borderRadius: 1 }}
           showRefresh={false}
+          focused={focused}
+          onToggleFocus={onToggleFocus}
         />
       </TableCell>
       <TableCell sx={{ width: 56 }}>{channel.id}</TableCell>
@@ -465,6 +546,11 @@ function ChannelsTab({ id }: { id: number }) {
   const q = useQuery({ queryKey: ['channels', id], queryFn: () => api.channels(id) });
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [search, setSearch] = useState('');
+  // Only one camera "in focus" (auto-refreshing its snapshot every second)
+  // at a time — polling every camera on the tab that fast would hammer the
+  // device for no benefit, since realistically only one is being watched.
+  // Clicking the focused camera's own snapshot again clears the selection.
+  const [focusedChannelId, setFocusedChannelId] = useState<number | null>(null);
 
   if (q.isLoading) return <CircularProgress size={24} />;
   if (q.isError) return <Alert severity="error">{(q.error as Error).message}</Alert>;
@@ -520,7 +606,13 @@ function ChannelsTab({ id }: { id: number }) {
       {channels.length > 0 && view === 'grid' && (
         <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 2 }}>
           {channels.map((c) => (
-            <ChannelCard key={c.id} deviceId={id} channel={c} />
+            <ChannelCard
+              key={c.id}
+              deviceId={id}
+              channel={c}
+              focused={focusedChannelId === Number(c.id)}
+              onToggleFocus={() => setFocusedChannelId((prev) => (prev === Number(c.id) ? null : Number(c.id)))}
+            />
           ))}
         </Box>
       )}
@@ -541,7 +633,13 @@ function ChannelsTab({ id }: { id: number }) {
             </TableHead>
             <TableBody>
               {channels.map((c) => (
-                <ChannelListRow key={c.id} deviceId={id} channel={c} />
+                <ChannelListRow
+                  key={c.id}
+                  deviceId={id}
+                  channel={c}
+                  focused={focusedChannelId === Number(c.id)}
+                  onToggleFocus={() => setFocusedChannelId((prev) => (prev === Number(c.id) ? null : Number(c.id)))}
+                />
               ))}
             </TableBody>
           </Table>

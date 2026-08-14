@@ -167,6 +167,14 @@ export interface DownloadTask {
   failedFiles: number;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Distinct camera labels/names covered by this task's files, in the
+   * order they first appear — lets the task list show which camera(s) a
+   * task is for without fetching every file (only the expanded per-task
+   * detail view does that). Usually a single entry; a task queued across
+   * multiple cameras has more than one.
+   */
+  channelNames: string[];
 }
 
 export interface DownloadTaskDetail extends DownloadTask {

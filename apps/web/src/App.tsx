@@ -16,6 +16,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import DevicesPage from './pages/DevicesPage';
 import DeviceDetailPage from './pages/DeviceDetailPage';
 import RecordingFilesPage from './pages/RecordingFilesPage';
+import CameraViewPage from './pages/CameraViewPage';
 import TasksPage from './pages/TasksPage';
 import LoginPage from './pages/LoginPage';
 import { api } from './api/client';
@@ -107,6 +108,7 @@ export default function App() {
             <Route path="/" element={<DevicesPage />} />
             <Route path="/tasks" element={<TasksPage />} />
             <Route path="/devices/:id/recordings/files" element={<RecordingFilesPage />} />
+            <Route path="/devices/:id/channels/:channelId" element={<CameraViewPage />} />
             <Route path="/devices/:id" element={<DeviceDetailPage />} />
           </Routes>
         </Box>

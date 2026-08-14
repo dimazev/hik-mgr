@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Tabs from '@mui/material/Tabs';
@@ -24,18 +24,17 @@ import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
 import Stack from '@mui/material/Stack';
 import Tooltip from '@mui/material/Tooltip';
-import type { SxProps, Theme } from '@mui/material/styles';
 import SaveIcon from '@mui/icons-material/Save';
 import SearchIcon from '@mui/icons-material/Search';
 import ViewModuleIcon from '@mui/icons-material/ViewModule';
 import ViewListIcon from '@mui/icons-material/ViewList';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import VideoLibraryIcon from '@mui/icons-material/VideoLibrary';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import type { Channel } from '@hik-mgr/shared';
 import { api } from '../api/client';
 import { useLocale } from '../i18n/LocaleContext';
+import { SnapshotImage } from '../components/SnapshotImage';
 
 function formatSince(iso: string, locale: string): string {
   const d = new Date(iso);
@@ -50,202 +49,6 @@ function formatDateTime(iso: string, locale: string): string {
   return d.toLocaleString(locale, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-const SNAPSHOT_MAX_ATTEMPTS = 3;
-const SNAPSHOT_RETRY_DELAY_MS = 500;
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Fetches a channel's snapshot as a blob (rather than pointing an <img> at
- * the URL directly) so a failed fetch can be told apart from a successful
- * one: `url` is only ever updated on success, so if a refresh fails (device
- * offline, timeout, etc.) the last successfully loaded snapshot stays on
- * screen instead of the browser swapping in a broken-image icon — `error`
- * is set alongside it so callers can show that the image is stale.
- *
- * A single request failure (e.g. a transient 500 while the device is busy)
- * is retried up to SNAPSHOT_MAX_ATTEMPTS times before giving up and
- * surfacing `error`.
- *
- * `focused` opts this one snapshot into a 1s auto-refresh loop (see the
- * effect below) — every other, unfocused camera on the page keeps loading
- * its snapshot only once (or on manual refresh), so selecting one camera
- * to "watch live" doesn't multiply the device's snapshot load by however
- * many cameras happen to be on screen.
- */
-function useSnapshot(deviceId: number, track: number, focused: boolean) {
-  const [url, setUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [attempt, setAttempt] = useState(0);
-  const currentUrlRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-
-    (async () => {
-      let lastError: unknown = null;
-
-      for (let attemptNum = 1; attemptNum <= SNAPSHOT_MAX_ATTEMPTS; attemptNum++) {
-        if (cancelled) return;
-        try {
-          const res = await fetch(api.snapshotUrl(deviceId, track));
-          if (!res.ok) throw new Error(`Snapshot request failed (${res.status})`);
-          const blob = await res.blob();
-          if (cancelled) return;
-          const next = URL.createObjectURL(blob);
-          if (currentUrlRef.current) URL.revokeObjectURL(currentUrlRef.current);
-          currentUrlRef.current = next;
-          setUrl(next);
-          setError(null);
-          lastError = null;
-          break;
-        } catch (err) {
-          lastError = err;
-          if (attemptNum < SNAPSHOT_MAX_ATTEMPTS) {
-            await delay(SNAPSHOT_RETRY_DELAY_MS);
-          }
-        }
-      }
-
-      if (cancelled) return;
-      if (lastError) {
-        // Deliberately not touching `url` here — keep whatever loaded last.
-        setError(lastError instanceof Error ? lastError.message : 'Failed to load snapshot');
-      }
-      setLoading(false);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deviceId, track, attempt]);
-
-  // Revoke the last object URL on unmount so it doesn't leak.
-  useEffect(() => {
-    return () => {
-      if (currentUrlRef.current) URL.revokeObjectURL(currentUrlRef.current);
-    };
-  }, []);
-
-  // While focused, re-trigger the fetch effect above once a second by
-  // bumping `attempt` — same request/retry/object-URL-swap path as a
-  // manual refresh, just on a timer. Stops immediately when `focused`
-  // goes false (camera deselected, or another camera becomes focused).
-  useEffect(() => {
-    if (!focused) return;
-    const interval = setInterval(() => setAttempt((n) => n + 1), 1000);
-    return () => clearInterval(interval);
-  }, [focused]);
-
-  return { url, error, loading, refresh: () => setAttempt((n) => n + 1) };
-}
-
-function SnapshotImage({
-  deviceId,
-  track,
-  alt,
-  sx,
-  showRefresh = true,
-  focused = false,
-  onToggleFocus,
-}: {
-  deviceId: number;
-  track: number;
-  alt: string;
-  sx?: SxProps<Theme>;
-  showRefresh?: boolean;
-  /** True while this camera is the one selected to auto-refresh every second — see useSnapshot. */
-  focused?: boolean;
-  /** Omit to make this snapshot unselectable. */
-  onToggleFocus?: () => void;
-}) {
-  const { url, error, loading, refresh } = useSnapshot(deviceId, track, focused);
-  const { t } = useLocale();
-
-  const clickable = !!onToggleFocus;
-
-  return (
-    <Tooltip title={clickable ? t(focused ? 'snapshot.unfocusAria' : 'snapshot.focusAria') : ''} disableHoverListener={!clickable}>
-      <Box
-        sx={{
-          position: 'relative',
-          overflow: 'hidden',
-          bgcolor: 'grey.200',
-          cursor: clickable ? 'pointer' : undefined,
-          outline: focused ? '2px solid' : 'none',
-          outlineColor: 'error.main',
-          outlineOffset: '-2px',
-          ...sx,
-        }}
-        onClick={onToggleFocus}
-      >
-        {url ? (
-          <Box component="img" src={url} alt={alt} sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-        ) : (
-          <Box sx={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {loading ? (
-              <CircularProgress size={18} />
-            ) : (
-              <Typography variant="caption" color="text.secondary">
-                {t('snapshot.noSnapshot')}
-              </Typography>
-            )}
-          </Box>
-        )}
-        {error && (
-          <Tooltip title={t('snapshot.errorTooltip', { error })}>
-            <WarningAmberIcon
-              fontSize="small"
-              color="warning"
-              sx={{ position: 'absolute', top: 4, left: 4, bgcolor: 'background.paper', borderRadius: '50%', p: 0.25 }}
-            />
-          </Tooltip>
-        )}
-        {focused && (
-          <Chip
-            size="small"
-            color="error"
-            label={t('snapshot.live')}
-            sx={{
-              position: 'absolute',
-              bottom: 4,
-              left: 4,
-              height: 18,
-              '& .MuiChip-label': { px: 0.75, fontSize: 10, fontWeight: 600 },
-            }}
-          />
-        )}
-        {showRefresh && (
-          <IconButton
-            aria-label={t('snapshot.refreshAria')}
-            size="small"
-            onClick={(e) => {
-              // Manual refresh shouldn't also toggle focus — it sits inside
-              // the same clickable box as the focus toggle above.
-              e.stopPropagation();
-              refresh();
-            }}
-            disabled={loading}
-            sx={{
-              position: 'absolute',
-              top: 4,
-              right: 4,
-              bgcolor: 'background.paper',
-              '&:hover': { bgcolor: 'background.paper' },
-            }}
-          >
-            <RefreshIcon fontSize="small" />
-          </IconButton>
-        )}
-      </Box>
-    </Tooltip>
-  );
-}
 
 function TabPanel({ value, index, children }: { value: number; index: number; children: React.ReactNode }) {
   if (value !== index) return null;
@@ -404,19 +207,10 @@ function RecordingHistoryLine({ deviceId, channel }: { deviceId: number; channel
   );
 }
 
-function ChannelCard({
-  deviceId,
-  channel,
-  focused,
-  onToggleFocus,
-}: {
-  deviceId: number;
-  channel: Channel;
-  focused: boolean;
-  onToggleFocus: () => void;
-}) {
+function ChannelCard({ deviceId, channel }: { deviceId: number; channel: Channel }) {
   const { label, setLabel, dirty, save, isSaving, error } = useChannelLabelEditor(deviceId, channel);
   const { t } = useLocale();
+  const navigate = useNavigate();
   const track = Number(channel.id) * 100 + 1;
   const displayName = channel.label || channel.name;
 
@@ -427,8 +221,7 @@ function ChannelCard({
         track={track}
         alt={`Snapshot of ${displayName}`}
         sx={{ width: '100%', aspectRatio: '4 / 3', borderRadius: 1, mb: 1.5 }}
-        focused={focused}
-        onToggleFocus={onToggleFocus}
+        onClick={() => navigate(`/devices/${deviceId}/channels/${channel.id}`)}
       />
       <Stack direction="row" spacing={1} alignItems="flex-start">
         <TextField
@@ -468,19 +261,10 @@ function ChannelCard({
   );
 }
 
-function ChannelListRow({
-  deviceId,
-  channel,
-  focused,
-  onToggleFocus,
-}: {
-  deviceId: number;
-  channel: Channel;
-  focused: boolean;
-  onToggleFocus: () => void;
-}) {
+function ChannelListRow({ deviceId, channel }: { deviceId: number; channel: Channel }) {
   const { label, setLabel, dirty, save, isSaving, error } = useChannelLabelEditor(deviceId, channel);
   const { t } = useLocale();
+  const navigate = useNavigate();
   const track = Number(channel.id) * 100 + 1;
   const displayName = channel.label || channel.name;
 
@@ -493,8 +277,7 @@ function ChannelListRow({
           alt={`Snapshot of ${displayName}`}
           sx={{ width: 72, height: 54, borderRadius: 1 }}
           showRefresh={false}
-          focused={focused}
-          onToggleFocus={onToggleFocus}
+          onClick={() => navigate(`/devices/${deviceId}/channels/${channel.id}`)}
         />
       </TableCell>
       <TableCell sx={{ width: 56 }}>{channel.id}</TableCell>
@@ -546,11 +329,6 @@ function ChannelsTab({ id }: { id: number }) {
   const q = useQuery({ queryKey: ['channels', id], queryFn: () => api.channels(id) });
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [search, setSearch] = useState('');
-  // Only one camera "in focus" (auto-refreshing its snapshot every second)
-  // at a time — polling every camera on the tab that fast would hammer the
-  // device for no benefit, since realistically only one is being watched.
-  // Clicking the focused camera's own snapshot again clears the selection.
-  const [focusedChannelId, setFocusedChannelId] = useState<number | null>(null);
 
   if (q.isLoading) return <CircularProgress size={24} />;
   if (q.isError) return <Alert severity="error">{(q.error as Error).message}</Alert>;
@@ -606,13 +384,7 @@ function ChannelsTab({ id }: { id: number }) {
       {channels.length > 0 && view === 'grid' && (
         <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 2 }}>
           {channels.map((c) => (
-            <ChannelCard
-              key={c.id}
-              deviceId={id}
-              channel={c}
-              focused={focusedChannelId === Number(c.id)}
-              onToggleFocus={() => setFocusedChannelId((prev) => (prev === Number(c.id) ? null : Number(c.id)))}
-            />
+            <ChannelCard key={c.id} deviceId={id} channel={c} />
           ))}
         </Box>
       )}
@@ -633,13 +405,7 @@ function ChannelsTab({ id }: { id: number }) {
             </TableHead>
             <TableBody>
               {channels.map((c) => (
-                <ChannelListRow
-                  key={c.id}
-                  deviceId={id}
-                  channel={c}
-                  focused={focusedChannelId === Number(c.id)}
-                  onToggleFocus={() => setFocusedChannelId((prev) => (prev === Number(c.id) ? null : Number(c.id)))}
-                />
+                <ChannelListRow key={c.id} deviceId={id} channel={c} />
               ))}
             </TableBody>
           </Table>

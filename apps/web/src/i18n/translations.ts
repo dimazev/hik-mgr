@@ -44,9 +44,11 @@ export const translations: Record<Locale, Record<string, string>> = {
     'snapshot.noSnapshot': 'No snapshot',
     'snapshot.refreshAria': 'Refresh snapshot',
     'snapshot.errorTooltip': 'Snapshot refresh failed, showing the last successful one. {error}',
-    'snapshot.focusAria': 'Watch live (refreshes every second)',
-    'snapshot.unfocusAria': 'Stop watching live',
+    'snapshot.openAria': 'Open camera (live view)',
     'snapshot.live': 'LIVE',
+
+    'cameraView.backToDevice': 'Back to device',
+    'cameraView.notFound': 'Camera not found.',
 
     'channel.label': 'Label',
     'channel.saveLabelAria': 'Save label',
@@ -177,9 +179,11 @@ export const translations: Record<Locale, Record<string, string>> = {
     'snapshot.noSnapshot': 'אין תמונה',
     'snapshot.refreshAria': 'רענון תמונה',
     'snapshot.errorTooltip': 'רענון התמונה נכשל, מוצגת התמונה האחרונה שהצליחה. {error}',
-    'snapshot.focusAria': 'צפייה חיה (מתרענן כל שנייה)',
-    'snapshot.unfocusAria': 'הפסקת צפייה חיה',
+    'snapshot.openAria': 'פתיחת מצלמה (צפייה חיה)',
     'snapshot.live': 'שידור חי',
+
+    'cameraView.backToDevice': 'חזרה למכשיר',
+    'cameraView.notFound': 'המצלמה לא נמצאה.',
 
     'channel.label': 'תווית',
     'channel.saveLabelAria': 'שמירת תווית',

@@ -5,4 +5,5 @@ data/
 .env.local
 *.log
 .DS_Store
+.yarn-tmp/
 _to_delete

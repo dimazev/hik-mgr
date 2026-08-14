@@ -8,3 +8,4 @@ data
 *.log
 .git
 .DS_Store
+.yarn-tmp

@@ -45,7 +45,18 @@ on the host (bind-mounted into the container).
 
 ## Running locally without Docker
 
-Requires Node 22+. `better-sqlite3` is pinned to `~12.10.0` specifically
+Requires Node 22+ and **ffmpeg on your PATH** (`ffmpeg -version` should
+work in your terminal) — download tasks automatically transcode each
+recording to a smaller 720p copy after it downloads (see
+[Download tasks](#download-tasks) below), by spawning `ffmpeg` as a
+subprocess. If ffmpeg isn't installed, downloads themselves still work
+fine; only that per-file conversion subtask fails, with a clear "ffmpeg
+not found" error shown on the Tasks page for that file. Install it via
+your OS package manager, e.g. `brew install ffmpeg` (macOS) or
+`apt install ffmpeg` (Debian/Ubuntu). The Docker image already includes
+it, nothing to do there.
+
+`better-sqlite3` is pinned to `~12.10.0` specifically
 because it's a version confirmed to build correctly against very new Node
 releases (see [Troubleshooting](#troubleshooting) if you ever hit a
 compile error here) — don't loosen that pin without checking. Docker pins
@@ -223,6 +234,39 @@ a valid login session — see [Authentication](#authentication).
 - `GET /api/devices/:id/files[?track=101&start=...&end=...&max=2000]` — recorded-file search. Without `?track=`, searches every channel `channels` reports (same "search all devices by default" behavior as `hik-connect list-files`), tagging each result with `deviceChannelName`.
 - `GET /api/devices/:id/download?uri=<playbackURI>` — streams the recording straight through to the browser as a file download.
 - `GET /api/devices/:id/snapshot[?track=101]` — one JPEG still frame from that channel's current live view.
+- `POST /api/devices/:id/download-tasks` — `{ files: [...] }` queues a [download task](#download-tasks); returns `{ taskId }` immediately.
+- `GET /api/tasks` / `GET /api/tasks/:taskId` — list/inspect download tasks (across every device).
+- `POST /api/tasks/:taskId/cancel`, `POST /api/tasks/:taskId/resume` — stop a task ASAP / re-run its outstanding work.
+- `GET /api/tasks/:taskId/files/:fileId/download` — streams that file's *converted* copy once ready.
+
+## Download tasks
+
+Recording downloads (from the Recordings tab's search → file list → single
+"Download" button) don't stream straight to the browser — they queue a
+**download task** that the server works through in the background, one
+file at a time:
+
+1. **Download** the raw recording from the device to `data/downloads/task-<id>/` (resumable via HTTP Range, same as `hik-connect`).
+2. **Convert** — once that file's download succeeds, ffmpeg immediately transcodes it to a smaller 720p copy in the same folder:
+   ```
+   ffmpeg -i <in> -vf "scale=1280:720" -c:v libx264 -crf 26 -preset slow -an -movflags +faststart <out>
+   ```
+   This is a *subtask* of the file, tracked and resumed independently of the download itself — a file can be fully downloaded while its conversion is still pending, in progress, or failed (most commonly because ffmpeg isn't installed — see [Running locally without Docker](#running-locally-without-docker)).
+
+Progress for both subtasks — bytes downloaded, ffmpeg's percent complete —
+updates live on the **Tasks** page (linked from the top bar) roughly once
+a second, and is also logged to the server console
+(`[download-task <id>] ...`). From there you can:
+
+- **Cancel** a pending/running task — aborts whatever's actively in flight (the HTTP download stream or the ffmpeg process) immediately, not just before the next file.
+- **Resume** a failed/cancelled/interrupted task — re-attempts only the outstanding work: files not yet downloaded (resuming a partial file on disk rather than restarting it), and files downloaded but not yet converted. Safe to click repeatedly.
+- **Download** the converted copy of any file whose conversion subtask is `done` — the only point in this flow that streams a file to the browser; the raw downloaded file stays server-side in `data/downloads/`.
+
+If the server process restarts while a task is mid-download or
+mid-conversion, that task is marked `interrupted` on the next startup
+(nothing is silently lost — see `markStaleRunningTasksInterrupted` in
+`apps/server/src/db/downloadTasks.ts`) and shows up on the Tasks page as
+resumable, same as a failed or cancelled one.
 
 ## Troubleshooting
 

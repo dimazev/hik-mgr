@@ -71,8 +71,30 @@ sqlite.exec(`
     size_bytes INTEGER,
     status TEXT NOT NULL DEFAULT 'pending',
     downloaded_bytes INTEGER NOT NULL DEFAULT 0,
-    error TEXT
+    error TEXT,
+    convert_status TEXT NOT NULL DEFAULT 'pending',
+    convert_progress INTEGER,
+    convert_error TEXT
   );
 `);
+
+// Columns added to download_task_files after it already shipped —
+// CREATE TABLE IF NOT EXISTS above is a no-op against an existing table,
+// so an ALTER TABLE is needed to backfill columns on a DB that already
+// has the table without them. SQLite has no "ADD COLUMN IF NOT EXISTS",
+// so each of these just tries the ALTER and swallows the "duplicate
+// column" error on every later startup once it's already been added.
+for (const alterStatement of [
+  `ALTER TABLE download_task_files ADD COLUMN total_bytes INTEGER`,
+  `ALTER TABLE download_task_files ADD COLUMN convert_status TEXT NOT NULL DEFAULT 'pending'`,
+  `ALTER TABLE download_task_files ADD COLUMN convert_progress INTEGER`,
+  `ALTER TABLE download_task_files ADD COLUMN convert_error TEXT`,
+]) {
+  try {
+    sqlite.exec(alterStatement);
+  } catch {
+    // Column already exists — fine, this runs on every startup.
+  }
+}
 
 export const db = drizzle(sqlite, { schema });

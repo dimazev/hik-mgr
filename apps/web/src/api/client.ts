@@ -79,6 +79,12 @@ export const api = {
     }),
   listDownloadTasks: () => request<DownloadTask[]>('/api/tasks'),
   getDownloadTask: (taskId: number) => request<DownloadTaskDetail>(`/api/tasks/${taskId}`),
+  cancelTask: (taskId: number) => request<{ ok: true }>(`/api/tasks/${taskId}/cancel`, { method: 'POST' }),
+  resumeTask: (taskId: number) => request<{ ok: true }>(`/api/tasks/${taskId}/resume`, { method: 'POST' }),
+  // Only valid once a file's conversion subtask is 'done' — streams the
+  // ffmpeg-converted copy as a real browser download (the raw downloaded
+  // file itself stays server-side).
+  convertedFileDownloadUrl: (taskId: number, fileId: number) => `/api/tasks/${taskId}/files/${fileId}/download`,
   snapshotUrl: (id: number, track?: number) => {
     const qs = new URLSearchParams({ t: String(Date.now()) });
     if (track) qs.set('track', String(track));

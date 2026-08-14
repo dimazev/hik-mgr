@@ -97,7 +97,15 @@ export const downloadTaskFiles = sqliteTable('download_task_files', {
     .notNull()
     .default('pending'),
   downloadedBytes: integer('downloaded_bytes').notNull().default(0),
+  totalBytes: integer('total_bytes'),
   error: text('error'),
+  // The ffmpeg-conversion subtask for this file — see the comment on
+  // DownloadTaskFileConvertStatus in shared/src/schema.ts.
+  convertStatus: text('convert_status', { enum: ['pending', 'converting', 'done', 'failed'] })
+    .notNull()
+    .default('pending'),
+  convertProgress: integer('convert_progress'),
+  convertError: text('convert_error'),
 });
 
 export type DownloadTaskFileRow = typeof downloadTaskFiles.$inferSelect;

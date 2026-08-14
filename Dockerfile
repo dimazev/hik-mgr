@@ -26,6 +26,10 @@ RUN yarn build:shared && yarn build:server && yarn build:web
 FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+# ffmpeg is spawned as a subprocess by videoConvert.ts (post-download
+# "shrink to 720p" step for download tasks) — not an npm dependency, so it
+# has to be installed at the OS level here.
+RUN apk add --no-cache ffmpeg
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
 COPY --from=deps /app/apps/server/node_modules ./apps/server/node_modules

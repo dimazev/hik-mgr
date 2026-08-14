@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import type {
   DownloadTask,
   DownloadTaskDetail,
+  DownloadTaskFileConvertStatus,
   DownloadTaskFileInput,
   DownloadTaskFileStatus,
   DownloadTaskStatus,
@@ -35,7 +36,11 @@ function toPublicFile(row: DownloadTaskFileRow) {
     sizeBytes: row.sizeBytes,
     status: row.status as DownloadTaskFileStatus,
     downloadedBytes: row.downloadedBytes,
+    totalBytes: row.totalBytes,
     error: row.error,
+    convertStatus: row.convertStatus as DownloadTaskFileConvertStatus,
+    convertProgress: row.convertProgress,
+    convertError: row.convertError,
   };
 }
 
@@ -103,12 +108,38 @@ export function updateTaskStatus(taskId: number, status: DownloadTaskStatus): vo
 export function updateTaskFileStatus(
   fileId: number,
   status: DownloadTaskFileStatus,
-  extra: { downloadedBytes?: number; error?: string | null } = {}
+  extra: { downloadedBytes?: number; totalBytes?: number | null; error?: string | null } = {}
 ): void {
   db.update(downloadTaskFiles)
     .set({ status, ...extra })
     .where(eq(downloadTaskFiles.id, fileId))
     .run();
+}
+
+/**
+ * Lightweight, frequent update used by the in-progress onProgress callback
+ * — deliberately doesn't touch `status` or bump task counters (those only
+ * change on file start/finish), just the byte counts the Tasks page polls
+ * for a live per-file progress bar.
+ */
+export function updateTaskFileProgress(fileId: number, downloadedBytes: number, totalBytes: number | null): void {
+  db.update(downloadTaskFiles).set({ downloadedBytes, totalBytes }).where(eq(downloadTaskFiles.id, fileId)).run();
+}
+
+export function updateTaskFileConvertStatus(
+  fileId: number,
+  convertStatus: DownloadTaskFileConvertStatus,
+  extra: { convertError?: string | null } = {}
+): void {
+  db.update(downloadTaskFiles)
+    .set({ convertStatus, ...extra })
+    .where(eq(downloadTaskFiles.id, fileId))
+    .run();
+}
+
+/** Same throttled-progress idea as updateTaskFileProgress, but for the ffmpeg conversion subtask. */
+export function updateTaskFileConvertProgress(fileId: number, convertProgress: number | null): void {
+  db.update(downloadTaskFiles).set({ convertProgress }).where(eq(downloadTaskFiles.id, fileId)).run();
 }
 
 /** Bumps a task's completed/failed counters by the given deltas (usually 1 of one, 0 of the other). */
@@ -123,4 +154,36 @@ export function incrementTaskCounts(taskId: number, delta: { completed?: number;
     })
     .where(eq(downloadTasks.id, taskId))
     .run();
+}
+
+/**
+ * Called once at server startup. Any task still marked 'running' at that
+ * point was mid-download (or mid-conversion) when the process stopped
+ * (crash, deploy, manual restart) — there's no worker actually touching it
+ * now, so it's relabeled 'interrupted' rather than sitting there looking
+ * active forever. An in-flight download goes back to 'pending' (the bytes
+ * already on disk are untouched, so a later resume picks up where it left
+ * off via downloadRecording's own Range-based resume); an in-flight
+ * conversion also goes back to 'pending' (ffmpeg leaves no usable partial
+ * output, so it just reruns from the start on resume).
+ */
+export function markStaleRunningTasksInterrupted(): number {
+  const stale = db.select().from(downloadTasks).where(eq(downloadTasks.status, 'running')).all();
+  for (const task of stale) {
+    updateTaskStatus(task.id, 'interrupted');
+    const files = db
+      .select()
+      .from(downloadTaskFiles)
+      .where(eq(downloadTaskFiles.taskId, task.id))
+      .all();
+    for (const file of files) {
+      if (file.status === 'downloading') {
+        updateTaskFileStatus(file.id, 'pending');
+      }
+      if (file.convertStatus === 'converting') {
+        updateTaskFileConvertStatus(file.id, 'pending');
+      }
+    }
+  }
+  return stale.length;
 }

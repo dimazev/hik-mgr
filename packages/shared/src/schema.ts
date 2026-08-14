@@ -90,8 +90,24 @@ export interface RecordingHistorySummary {
 // persists in download_tasks/download_task_files, and is tracked on the
 // Tasks page rather than as a browser download.
 
-export type DownloadTaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+// 'interrupted' is set on any task still marked 'running' when the server
+// starts up — it was mid-download when the process died/restarted, so
+// there's no worker actually working on it anymore even though the DB row
+// says "running". Distinct from 'failed' so the Tasks page can say "the
+// server restarted" rather than "a file failed", though both are resumable
+// the same way (POST /api/tasks/:taskId/resume).
+export type DownloadTaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
 export type DownloadTaskFileStatus = 'pending' | 'downloading' | 'done' | 'failed';
+
+// Each file's conversion is a subtask of its download: it only starts
+// once that file's `status` is 'done', runs the fixed ffmpeg transcode
+// (see videoConvert.ts), and is tracked/resumed independently of the
+// download itself — a file can be fully downloaded ('done') while its
+// conversion is still 'pending', 'converting', or has 'failed' (e.g.
+// ffmpeg isn't installed on the server). Conversion outcome deliberately
+// doesn't affect the parent task's completedFiles/failedFiles counters,
+// which track downloads only.
+export type DownloadTaskFileConvertStatus = 'pending' | 'converting' | 'done' | 'failed';
 
 /** One file to queue for download — supplied by the client when creating a task. */
 export const downloadTaskFileInputSchema = z.object({
@@ -114,8 +130,16 @@ export type CreateDownloadTaskInput = z.infer<typeof createDownloadTaskSchema>;
 export interface DownloadTaskFile extends DownloadTaskFileInput {
   id: number;
   status: DownloadTaskFileStatus;
+  /** Bytes written to disk so far — updated live while status is 'downloading', final size once 'done'. */
   downloadedBytes: number;
+  /** Total size reported by the device for this file, if known yet (null until the response headers arrive). */
+  totalBytes: number | null;
   error: string | null;
+  /** The ffmpeg-conversion subtask for this file — see DownloadTaskFileConvertStatus above. */
+  convertStatus: DownloadTaskFileConvertStatus;
+  /** 0–100, updated live while convertStatus is 'converting'; null otherwise or if ffmpeg's output couldn't be parsed. */
+  convertProgress: number | null;
+  convertError: string | null;
 }
 
 export interface DownloadTask {

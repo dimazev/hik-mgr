@@ -166,7 +166,15 @@ export async function downloadRecording(
   playbackURI: string,
   destPath: string,
   onProgress?: (p: DownloadProgress) => void,
-  opts2: { resume?: boolean } = {}
+  opts2: {
+    resume?: boolean;
+    // Called with the live response stream as soon as it's available, so
+    // a caller (downloadWorker's cancel handling) can hang onto it and
+    // call .destroy() to abort mid-file instead of only being able to
+    // stop *between* files. Optional — nothing here depends on it being
+    // used.
+    onStreamStart?: (stream: NodeJS.ReadableStream) => void;
+  } = {}
 ): Promise<string> {
   const resume = opts2.resume !== false;
   const existingBytes = resume && fs.existsSync(destPath) ? fs.statSync(destPath).size : 0;
@@ -194,6 +202,8 @@ export async function downloadRecording(
   const startByte = resumed ? existingBytes : 0;
   const totalBytes = resolveTotalBytes(response.headers, startByte);
 
+  opts2.onStreamStart?.(response.data);
+
   await new Promise<void>((resolve, reject) => {
     const out = fs.createWriteStream(destPath, { flags: startByte > 0 ? 'r+' : 'w', start: startByte });
     let receivedBytes = startByte;
@@ -211,7 +221,14 @@ export async function downloadRecording(
     }
 
     response.data.pipe(out);
-    response.data.on('error', reject);
+    // If the caller destroys the response stream to cancel mid-file (see
+    // onStreamStart above), also close the write stream rather than
+    // leaving its file handle dangling — .pipe() doesn't do that on its
+    // own when the *source* errors/closes.
+    response.data.on('error', (err: Error) => {
+      out.destroy();
+      reject(err);
+    });
     out.on('error', reject);
     out.on('finish', () => {
       if (totalBytes && receivedBytes < totalBytes) {

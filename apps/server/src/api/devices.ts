@@ -257,6 +257,13 @@ router.get(
   })
 );
 
+// Searches by exact [start, end) timespan. The device's own CMSearch
+// (searchRecordingsPage) returns every recording that *overlaps* the
+// requested timespan, not just ones fully contained by it — so a search
+// for e.g. 13:00–14:00 also finds a file that started at 12:55 and is
+// still recording at 13:00, i.e. a file "which includes this frame" at
+// the boundary is found rather than skipped. No extra filtering needed
+// here for that.
 router.get(
   '/:id/files',
   asyncHandler(async (req, res) => {
@@ -270,6 +277,19 @@ router.get(
     const startTime = typeof req.query.start === 'string' ? req.query.start : undefined;
     const endTime = typeof req.query.end === 'string' ? req.query.end : undefined;
     const maxResults = req.query.max ? Number(req.query.max) : undefined;
+    // Optional comma-separated list of channel ids to restrict the search
+    // to (e.g. from the Recordings tab's channel picker) — lets a caller
+    // that only wants a few channels skip scanning the rest of the device
+    // entirely, rather than fetching everything and filtering client-side.
+    const channelFilter =
+      typeof req.query.channels === 'string' && req.query.channels.trim() !== ''
+        ? new Set(
+            req.query.channels
+              .split(',')
+              .map((s) => Number(s.trim()))
+              .filter((n) => Number.isFinite(n))
+          )
+        : undefined;
 
     if (track) {
       const result = await searchRecordings(conn, { trackID: track, startTime, endTime, maxResults });
@@ -278,13 +298,16 @@ router.get(
     }
 
     // No specific track requested — search every channel this device
-    // reports, same "search all devices/channels by default" behavior as
-    // hik-connect's list-files command, tagging each match with the
-    // channel name it came from.
+    // reports (or, if channelFilter is set, only the requested ones), same
+    // "search all devices/channels by default" behavior as hik-connect's
+    // list-files command, tagging each match with the channel name it
+    // came from.
     let channelList: { id: number; name: string }[] = [];
     try {
       const { channels } = await listChannels(conn);
-      channelList = channels.map((c) => ({ id: Number(c.id), name: c.name }));
+      channelList = channels
+        .map((c) => ({ id: Number(c.id), name: c.name }))
+        .filter((c) => !channelFilter || channelFilter.has(c.id));
     } catch {
       // No separate channel list available — fall back to the single
       // default track (101), same convention as hik-connect.
@@ -321,7 +344,14 @@ router.get(
       return;
     }
     const { stream, headers } = await streamRecordingToResponse(toConn(row), playbackURI);
-    res.setHeader('Content-Disposition', `attachment; filename="recording-${row.id}-${Date.now()}.mp4"`);
+    // Callers (the recordings file list) can pass a friendly filename
+    // (channel name + recording start time) — strip anything that isn't
+    // safe in a Content-Disposition header / filesystem name before
+    // trusting it, and fall back to the old generic name otherwise.
+    const requestedName = typeof req.query.filename === 'string' ? req.query.filename : undefined;
+    const safeName = requestedName ? requestedName.replace(/[^a-zA-Z0-9_.-]+/g, '_').slice(0, 150) : undefined;
+    const filename = safeName || `recording-${row.id}-${Date.now()}.mp4`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     if (headers['content-length']) res.setHeader('Content-Length', String(headers['content-length']));
     res.setHeader('Content-Type', 'video/mp4');
     stream.pipe(res);

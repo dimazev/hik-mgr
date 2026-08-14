@@ -12,6 +12,7 @@ import VideocamIcon from '@mui/icons-material/Videocam';
 import LogoutIcon from '@mui/icons-material/Logout';
 import DevicesPage from './pages/DevicesPage';
 import DeviceDetailPage from './pages/DeviceDetailPage';
+import RecordingFilesPage from './pages/RecordingFilesPage';
 import LoginPage from './pages/LoginPage';
 import { api } from './api/client';
 
@@ -73,6 +74,7 @@ export default function App() {
         <Box sx={{ py: 3 }}>
           <Routes>
             <Route path="/" element={<DevicesPage />} />
+            <Route path="/devices/:id/recordings/files" element={<RecordingFilesPage />} />
             <Route path="/devices/:id" element={<DeviceDetailPage />} />
           </Routes>
         </Box>

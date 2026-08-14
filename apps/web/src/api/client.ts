@@ -44,17 +44,21 @@ export const api = {
     request<RecordingHistorySummary>(
       `/api/devices/${deviceId}/channels/${channelId}/recording-history${refresh ? '?refresh=1' : ''}`
     ),
-  files: (id: number, params: { track?: number; start?: string; end?: string; max?: number } = {}) => {
+  files: (id: number, params: { track?: number; start?: string; end?: string; max?: number; channels?: number[] } = {}) => {
     const qs = new URLSearchParams();
     if (params.track) qs.set('track', String(params.track));
     if (params.start) qs.set('start', params.start);
     if (params.end) qs.set('end', params.end);
     if (params.max) qs.set('max', String(params.max));
+    if (params.channels && params.channels.length > 0) qs.set('channels', params.channels.join(','));
     const suffix = qs.toString() ? `?${qs.toString()}` : '';
     return request<{ numOfMatches: number; files: RecordingFile[] }>(`/api/devices/${id}/files${suffix}`);
   },
-  downloadUrl: (id: number, playbackURI: string) =>
-    `/api/devices/${id}/download?uri=${encodeURIComponent(playbackURI)}`,
+  downloadUrl: (id: number, playbackURI: string, filename?: string) => {
+    const qs = new URLSearchParams({ uri: playbackURI });
+    if (filename) qs.set('filename', filename);
+    return `/api/devices/${id}/download?${qs.toString()}`;
+  },
   snapshotUrl: (id: number, track?: number) => {
     const qs = new URLSearchParams({ t: String(Date.now()) });
     if (track) qs.set('track', String(track));

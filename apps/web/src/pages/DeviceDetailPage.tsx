@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, Link as RouterLink } from 'react-router-dom';
+import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
@@ -16,6 +16,7 @@ import TableRow from '@mui/material/TableRow';
 import TextField from '@mui/material/TextField';
 import InputAdornment from '@mui/material/InputAdornment';
 import IconButton from '@mui/material/IconButton';
+import Button from '@mui/material/Button';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Chip from '@mui/material/Chip';
@@ -31,6 +32,7 @@ import ViewListIcon from '@mui/icons-material/ViewList';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import VideoLibraryIcon from '@mui/icons-material/VideoLibrary';
+import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import type { Channel } from '@hik-mgr/shared';
 import { api } from '../api/client';
 
@@ -38,6 +40,13 @@ function formatSince(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+/** Formats an ISO timestamp for display in the search summary line. */
+function formatDateTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 const SNAPSHOT_MAX_ATTEMPTS = 3;
@@ -509,6 +518,197 @@ function ChannelsTab({ id }: { id: number }) {
   );
 }
 
+/**
+ * Lets the user pick a start/end time, then shows how many recording files
+ * were found per channel in that window. The device's search already
+ * returns files that merely *overlap* the requested span (see the comment
+ * on GET /:id/files server-side), so a boundary like 13:00 as either the
+ * start or end still picks up a file that was recording through that
+ * moment rather than one that happens to start/end exactly on it.
+ *
+ * "Download files" hands the same range off to a dedicated page
+ * (RecordingFilesPage, a real route so it's back-button/bookmarkable) that
+ * lists every matching file individually with its channel name and a
+ * generated file name, each with its own download link.
+ */
+function RecordingsTab({ id }: { id: number }) {
+  const navigate = useNavigate();
+  const [startInput, setStartInput] = useState('');
+  const [endInput, setEndInput] = useState('');
+  const [selectedChannelIds, setSelectedChannelIds] = useState<Set<number> | null>(null);
+  const [range, setRange] = useState<{ start: string; end: string; channelIds: number[] } | null>(null);
+
+  const channelsQuery = useQuery({ queryKey: ['channels', id], queryFn: () => api.channels(id) });
+  const allChannels = channelsQuery.data?.channels ?? [];
+
+  // Default to "every channel selected" once the channel list has loaded —
+  // only overridden once the user actually touches a checkbox.
+  useEffect(() => {
+    if (selectedChannelIds === null && allChannels.length > 0) {
+      setSelectedChannelIds(new Set(allChannels.map((c) => Number(c.id))));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allChannels.length]);
+
+  const toggleChannel = (channelId: number) => {
+    setSelectedChannelIds((prev) => {
+      const next = new Set(prev ?? []);
+      if (next.has(channelId)) next.delete(channelId);
+      else next.add(channelId);
+      return next;
+    });
+  };
+
+  const toggleAllChannels = () => {
+    setSelectedChannelIds((prev) =>
+      (prev?.size ?? 0) === allChannels.length ? new Set() : new Set(allChannels.map((c) => Number(c.id)))
+    );
+  };
+
+  const q = useQuery({
+    queryKey: ['recordings-search', id, range],
+    queryFn: () => api.files(id, { start: range!.start, end: range!.end, channels: range!.channelIds }),
+    enabled: !!range,
+  });
+
+  const selectedCount = selectedChannelIds?.size ?? 0;
+  const canSearch = startInput !== '' && endInput !== '' && selectedCount > 0;
+
+  const handleSearch = () => {
+    if (!canSearch || !selectedChannelIds) return;
+    const start = new Date(startInput);
+    const end = new Date(endInput);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return;
+    setRange({ start: start.toISOString(), end: end.toISOString(), channelIds: [...selectedChannelIds] });
+  };
+
+  const files = q.data?.files ?? [];
+  const counts = new Map<string, number>();
+  for (const f of files) {
+    const key = f.deviceChannelName ?? 'Unknown channel';
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  const handleDownload = () => {
+    if (!range) return;
+    const qs = new URLSearchParams({ start: range.start, end: range.end, channels: range.channelIds.join(',') });
+    navigate(`/devices/${id}/recordings/files?${qs.toString()}`);
+  };
+
+  return (
+    <Stack spacing={2}>
+      <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
+        <TextField
+          label="Start"
+          type="datetime-local"
+          size="small"
+          value={startInput}
+          onChange={(e) => setStartInput(e.target.value)}
+          slotProps={{ inputLabel: { shrink: true } }}
+        />
+        <TextField
+          label="End"
+          type="datetime-local"
+          size="small"
+          value={endInput}
+          onChange={(e) => setEndInput(e.target.value)}
+          slotProps={{ inputLabel: { shrink: true } }}
+        />
+        <Button variant="contained" size="small" onClick={handleSearch} disabled={!canSearch || q.isFetching}>
+          Search
+        </Button>
+      </Stack>
+
+      {allChannels.length > 0 && (
+        <Paper variant="outlined" sx={{ p: 1.5 }}>
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
+            <Typography variant="subtitle2">Channels</Typography>
+            <Button size="small" onClick={toggleAllChannels}>
+              {selectedCount === allChannels.length ? 'Deselect all' : 'Select all'}
+            </Button>
+            <Typography variant="caption" color="text.secondary">
+              {selectedCount} of {allChannels.length} selected
+            </Typography>
+          </Stack>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+            {allChannels.map((c) => {
+              const channelId = Number(c.id);
+              const checked = selectedChannelIds?.has(channelId) ?? false;
+              return (
+                <Chip
+                  key={channelId}
+                  size="small"
+                  clickable
+                  label={c.label || c.name}
+                  color={checked ? 'primary' : 'default'}
+                  variant={checked ? 'filled' : 'outlined'}
+                  onClick={() => toggleChannel(channelId)}
+                />
+              );
+            })}
+          </Box>
+        </Paper>
+      )}
+
+      {q.isFetching && (
+        <Stack direction="row" spacing={1} alignItems="center">
+          <CircularProgress size={18} />
+          <Typography variant="body2" color="text.secondary">
+            Scanning channels for recordings…
+          </Typography>
+        </Stack>
+      )}
+
+      {q.isError && <Alert severity="error">{(q.error as Error).message}</Alert>}
+
+      {range && q.isSuccess && (
+        <Stack spacing={1.5}>
+          <Typography variant="subtitle2">
+            {files.length} file{files.length === 1 ? '' : 's'} found between {formatDateTime(range.start)} and{' '}
+            {formatDateTime(range.end)}
+          </Typography>
+          <TableContainer component={Paper}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Channel</TableCell>
+                  <TableCell align="right">Files</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {[...counts.entries()].map(([channel, count]) => (
+                  <TableRow key={channel}>
+                    <TableCell>{channel}</TableCell>
+                    <TableCell align="right">{count}</TableCell>
+                  </TableRow>
+                ))}
+                {counts.size === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={2}>
+                      <Typography color="text.secondary">No recordings found in this period.</Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          <Box>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<FileDownloadIcon />}
+              onClick={handleDownload}
+              disabled={files.length === 0}
+            >
+              Download files ({files.length})
+            </Button>
+          </Box>
+        </Stack>
+      )}
+    </Stack>
+  );
+}
+
 export default function DeviceDetailPage() {
   const { id } = useParams();
   const deviceId = Number(id);
@@ -525,12 +725,16 @@ export default function DeviceDetailPage() {
       <Tabs value={tab} onChange={(_e, v) => setTab(v)}>
         <Tab label="Status" />
         <Tab label="Channels" />
+        <Tab label="Recordings" />
       </Tabs>
       <TabPanel value={tab} index={0}>
         <StatusTab id={deviceId} />
       </TabPanel>
       <TabPanel value={tab} index={1}>
         <ChannelsTab id={deviceId} />
+      </TabPanel>
+      <TabPanel value={tab} index={2}>
+        <RecordingsTab id={deviceId} />
       </TabPanel>
     </Stack>
   );

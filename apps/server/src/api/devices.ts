@@ -1,4 +1,5 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
+import type { Readable } from 'node:stream';
 import { eq } from 'drizzle-orm';
 import { deviceInputSchema, deviceUpdateSchema, channelLabelInputSchema, createDownloadTaskSchema, type Device } from '@hik-mgr/shared';
 import { db } from '../db/client';
@@ -15,6 +16,7 @@ import {
   searchRecordings,
   streamRecordingToResponse,
   captureSnapshot,
+  streamMjpeg,
   type DeviceConn,
 } from '../hik/isapi';
 
@@ -420,6 +422,83 @@ router.get(
     const jpeg = await captureSnapshot(toConn(row), trackID);
     res.setHeader('Content-Type', 'image/jpeg');
     res.send(jpeg);
+  })
+);
+
+// Live video — a continuous multipart/x-mixed-replace MJPEG feed, meant to
+// be used directly as an <img> tag's src (see CameraViewPage.tsx on the
+// web client): the browser renders each JPEG frame as it arrives with no
+// extra JS on our side, and no ffmpeg/WebRTC transcoding needed on the
+// server either. Unlike every other route here, the response never
+// finishes on its own — it stays open streaming frames for as long as the
+// client keeps the connection (i.e. as long as the <img> is on screen).
+router.get(
+  '/:id/stream',
+  asyncHandler(async (req, res) => {
+    const deviceId = Number(req.params.id);
+    const trackID = req.query.track ? Number(req.query.track) : 101;
+    // A unique-enough tag per open request so concurrent views of
+    // different cameras (or the same one, retried) don't interleave into
+    // unreadable logs — there's no request-id middleware in this app, so
+    // this is the cheapest way to tell one /stream connection's log lines
+    // apart from another's.
+    const reqTag = `${deviceId}:${trackID}:${Date.now().toString(36)}`;
+    // eslint-disable-next-line no-console
+    console.log(`[stream ${reqTag}] GET /:id/stream — deviceId=${deviceId}, track=${trackID}`);
+
+    const row = getDeviceRow(deviceId);
+    if (!row) {
+      // eslint-disable-next-line no-console
+      console.warn(`[stream ${reqTag}] device ${deviceId} not found`);
+      res.status(404).json({ error: 'Device not found' });
+      return;
+    }
+    // eslint-disable-next-line no-console
+    console.log(`[stream ${reqTag}] device found: "${row.name}" (${row.protocol}://${row.host}:${row.port}) — fetching stream URL from device`);
+
+    let stream: Readable;
+    let headers: Record<string, unknown>;
+    try {
+      ({ stream, headers } = await streamMjpeg(toConn(row), trackID));
+    } catch (err: any) {
+      // streamMjpeg already logged the request/response detail — this is
+      // just the "give up and tell the browser" half, so the failure also
+      // shows up associated with this request's tag.
+      // eslint-disable-next-line no-console
+      console.error(`[stream ${reqTag}] giving up: ${err?.message}`);
+      throw err;
+    }
+
+    // eslint-disable-next-line no-console
+    console.log(`[stream ${reqTag}] got stream from device, content-type=${headers['content-type']} — piping to client`);
+
+    // The device's own multipart boundary lives in this header — has to be
+    // forwarded byte-for-byte (not just "multipart/x-mixed-replace") or the
+    // browser can't tell where one JPEG frame ends and the next begins.
+    if (headers['content-type']) res.setHeader('Content-Type', String(headers['content-type']));
+
+    // Mid-stream network hiccups (device drops the connection, Wi-Fi blip,
+    // etc.) surface as an 'error' on the upstream stream, not a thrown
+    // exception — without this handler they'd crash the process instead
+    // of just ending this one client's feed.
+    stream.on('error', (err) => {
+      // eslint-disable-next-line no-console
+      console.error(`[stream ${reqTag}] upstream stream error: ${err.message}`);
+      res.end();
+    });
+
+    // The client navigating away / closing the tab ends the HTTP request,
+    // but the upstream device connection needs to be torn down explicitly
+    // — an MJPEG stream has no natural end, so without this the device
+    // connection (and the axios stream reading it) would leak for as long
+    // as the process runs, one per camera view ever opened.
+    req.on('close', () => {
+      // eslint-disable-next-line no-console
+      console.log(`[stream ${reqTag}] client disconnected — closing upstream device connection`);
+      stream.destroy();
+    });
+
+    stream.pipe(res);
   })
 );
 

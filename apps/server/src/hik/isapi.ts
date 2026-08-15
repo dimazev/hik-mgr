@@ -368,6 +368,200 @@ export async function captureSnapshot(conn: DeviceConn, trackID: number): Promis
   return Buffer.from(response.data);
 }
 
+/**
+ * Opens a live MJPEG stream from the device — `multipart/x-mixed-replace`
+ * over plain HTTP, a JPEG-per-frame format every mainstream browser
+ * natively decodes when it's the `src` of a plain `<img>` tag (no
+ * WebRTC/HLS/ffmpeg transcoding needed on our side, unlike an RTSP feed).
+ * Same digest-auth-then-stream-the-response shape as
+ * streamRecordingToResponse above; the caller is responsible for piping
+ * `stream` to the HTTP response and for destroying it when the client
+ * disconnects (see GET /:id/stream in api/devices.ts) — an MJPEG stream
+ * never ends on its own, so nothing here closes it for you.
+ */
+/**
+ * Reads a small Node Readable stream fully into a string, capped so a huge
+ * or never-ending body can't hang a log line or blow up memory. Only meant
+ * for small error-response bodies (a few hundred bytes of XML/JSON), never
+ * for actual frame data.
+ */
+function drainStreamToString(stream: Readable, maxBytes = 2000): Promise<string> {
+  return new Promise((resolve) => {
+    let bytes = 0;
+    const chunks: Buffer[] = [];
+    const finish = () => resolve(Buffer.concat(chunks).toString('utf8'));
+    stream.on('data', (chunk: Buffer) => {
+      if (bytes >= maxBytes) return;
+      chunks.push(chunk);
+      bytes += chunk.length;
+      if (bytes >= maxBytes) stream.destroy();
+    });
+    stream.on('end', finish);
+    stream.on('close', finish);
+    stream.on('error', finish);
+  });
+}
+
+/**
+ * Reads back the device's own config for this streaming channel — codec,
+ * resolution, transport — before we even attempt httpPreview. Returns the
+ * raw XML text too (not just the parsed fields) so the caller can patch and
+ * PUT it back without having to reconstruct the device's full schema from
+ * scratch. Best-effort: any failure here is swallowed and logged, never
+ * allowed to block the real request.
+ */
+async function getChannelConfig(conn: DeviceConn, trackID: number): Promise<{ rawXml: string; codec: string | undefined } | null> {
+  const url = `${baseUrl(conn)}/ISAPI/Streaming/channels/${trackID}`;
+  try {
+    const client = digestClient(conn);
+    const res = await client.request({ method: 'GET', url });
+    const rawXml = String(res.data);
+    const cfg = xmlParser.parse(rawXml)?.StreamingChannel;
+    if (!cfg) {
+      console.log(`[stream] channel config for ${url}: response had no <StreamingChannel> — raw: ${rawXml.trim().slice(0, 500)}`);
+      return null;
+    }
+    console.log(
+      `[stream] channel ${trackID} config — enabled=${cfg.enabled}, transport=${cfg.Transport?.rtspPortNo ? 'rtsp+http' : 'unknown'}, ` +
+        `videoCodecType=${cfg.Video?.videoCodecType}, resolution=${cfg.Video?.videoResolutionWidth}x${cfg.Video?.videoResolutionHeight}, ` +
+        `frameRate=${cfg.Video?.maxFrameRate}`
+    );
+    return { rawXml, codec: cfg.Video?.videoCodecType };
+  } catch (err: any) {
+    const status = err?.response?.status;
+    console.warn(`[stream] could not read channel config for ${url} (non-fatal, continuing anyway): ${err?.message}${status ? ` (status ${status})` : ''}`);
+    return null;
+  }
+}
+
+/**
+ * httpPreview only ever serves MJPEG, and three rounds of asking the user to
+ * flip that setting in the device's own UI haven't landed — the logged
+ * channel config keeps coming back H.264 on every retry. Rather than send
+ * them hunting through NVR menus for a setting that may not even be exposed
+ * there for a proxied IP camera, do it ourselves: PUT the same config XML
+ * straight back with just <videoCodecType> swapped to MJPEG. This is the
+ * exact change the device's own "Video Encoding" dropdown makes, just done
+ * over ISAPI instead of the web UI — same effect, one less place for a
+ * multi-hop NVR menu to not be the menu that actually controls this.
+ *
+ * Only touches the requested trackID (the sub-stream), never the main
+ * stream used for recording, and only when the codec isn't already MJPEG.
+ * If the device rejects the PUT (e.g. this model genuinely doesn't support
+ * MJPEG on this channel), that's logged and httpPreview is attempted anyway
+ * so the resulting error is the device's real, final answer.
+ */
+async function ensureMjpegSubstream(conn: DeviceConn, trackID: number): Promise<void> {
+  const cfg = await getChannelConfig(conn, trackID);
+  if (!cfg) return;
+  if (cfg.codec === 'MJPEG') {
+    console.log(`[stream] channel ${trackID} is already MJPEG — no config change needed`);
+    return;
+  }
+  console.log(`[stream] channel ${trackID} codec is "${cfg.codec}", not MJPEG — attempting to switch it via ISAPI so httpPreview can work`);
+  if (!/<videoCodecType>[^<]*<\/videoCodecType>/.test(cfg.rawXml)) {
+    console.warn(`[stream] channel ${trackID} config XML has no <videoCodecType> element to patch — leaving as-is`);
+    return;
+  }
+  const patchedXml = cfg.rawXml.replace(/<videoCodecType>[^<]*<\/videoCodecType>/, '<videoCodecType>MJPEG</videoCodecType>');
+  const url = `${baseUrl(conn)}/ISAPI/Streaming/channels/${trackID}`;
+  try {
+    const client = digestClient(conn);
+    const res = await client.request({
+      method: 'PUT',
+      url,
+      data: patchedXml,
+      headers: { 'Content-Type': 'application/xml' },
+    });
+    console.log(`[stream] PUT ${url} to switch channel ${trackID} to MJPEG — device responded status=${res.status}`);
+    // A 200 on the PUT only means the device accepted the request — some
+    // Hikvision firmwares silently ignore fields they don't actually support
+    // rather than rejecting them, so re-read the config to confirm the
+    // codec actually changed before trusting it did.
+    const verify = await getChannelConfig(conn, trackID);
+    if (verify) {
+      console.log(
+        verify.codec === 'MJPEG'
+          ? `[stream] verified: channel ${trackID} codec is now MJPEG`
+          : `[stream] channel ${trackID} PUT returned 200 but codec is STILL "${verify.codec}" — the device silently ignored the change; this channel likely can't be switched to MJPEG at all`
+      );
+    }
+  } catch (err: any) {
+    const status = err?.response?.status;
+    const rawBody = err?.response?.data;
+    const body = rawBody && typeof rawBody.on === 'function' ? await drainStreamToString(rawBody) : rawBody;
+    console.warn(
+      `[stream] PUT ${url} to switch channel ${trackID} to MJPEG failed: ${err?.message}` +
+        (status ? ` (device responded ${status}${body ? `: ${String(body).trim().slice(0, 500)}` : ''})` : '') +
+        ' — this device/channel likely does not support MJPEG on this stream; continuing with httpPreview anyway to get its real error'
+    );
+  }
+}
+
+export async function streamMjpeg(conn: DeviceConn, trackID: number): Promise<{ stream: Readable; headers: Record<string, unknown> }> {
+  const url = `${baseUrl(conn)}/ISAPI/Streaming/channels/${trackID}/httpPreview`;
+  // Logged before the request, not just on failure — digest auth means
+  // this is actually two HTTP round trips (an initial 401 challenge, then
+  // the authenticated retry) before any frame data arrives, so "it's
+  // taking a while" and "it never responded" look identical without a
+  // timestamp on the outgoing request to compare against.
+  // eslint-disable-next-line no-console
+  console.log(`[stream] requesting MJPEG from device: ${url} (host=${conn.host}:${conn.port}, trackID=${trackID})`);
+  await ensureMjpegSubstream(conn, trackID);
+  const client = digestClient(conn);
+  try {
+    const response = await client.request({
+      method: 'GET',
+      url,
+      responseType: 'stream',
+    });
+    // eslint-disable-next-line no-console
+    console.log(
+      `[stream] device responded for ${url}: status=${response.status}, content-type=${response.headers?.['content-type']}`
+    );
+    return { stream: response.data, headers: response.headers };
+  } catch (err: any) {
+    // Digest auth failures, connection refused/timeout, and "this
+    // firmware doesn't have httpPreview" (404) all surface here. Because
+    // the request used responseType: 'stream', a NON-2xx response body
+    // (Hikvision returns a small XML doc describing exactly what went
+    // wrong, e.g. <statusString>/<subStatusCode>) arrives as an unread
+    // stream too, not a parsed string — logging `err.response.data`
+    // directly just prints "[object Object]", which is why earlier
+    // versions of this log line weren't actually showing the reason. Drain
+    // it here so the device's own explanation ends up in the log instead
+    // of a generic status code.
+    const status = err?.response?.status;
+    const rawBody = err?.response?.data;
+    const body = rawBody && typeof rawBody.on === 'function' ? await drainStreamToString(rawBody) : rawBody;
+    // eslint-disable-next-line no-console
+    console.error(
+      `[stream] request failed for ${url}: ${err?.message}` +
+        (status ? ` (device responded ${status}${body ? `: ${String(body).trim().slice(0, 500)}` : ' with an empty body'})` : '') +
+        // A 403 with subStatusCode "invalidOperation" is Hikvision's
+        // generic "not allowed right now" — it does NOT specifically mean
+        // "wrong codec" (that theory came first and turned out wrong for
+        // at least one real device). Two known, unrelated causes produce
+        // this exact error:
+        //  1. The sub-stream's Video Encoding isn't set to MJPEG
+        //     (Configuration > Video/Audio on the device) — httpPreview
+        //     only ever serves MJPEG.
+        //  2. "Stream Encryption" is turned on under Platform Access /
+        //     Hik-Connect settings — a security feature that blocks direct
+        //     ISAPI preview streaming like this entirely, independent of
+        //     codec. Devices reachable through a DDNS/P2P-style hostname
+        //     (kozow.com, hik-connect, etc.) commonly have this on by
+        //     default. Disabling it (Configuration > Network > Platform
+        //     Access > uncheck "Enable Stream Encryption") is the known
+        //     fix when the codec is already MJPEG and it still 403s.
+        (status === 403
+          ? ` [subStatusCode invalidOperation, if not explained above: check (1) sub-stream Video Encoding = MJPEG under Configuration > Video/Audio, and (2) "Enable Stream Encryption" is OFF under Configuration > Network > Platform Access / Hik-Connect]`
+          : '')
+    );
+    throw err;
+  }
+}
+
 function isoDaysAgo(days: number): string {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 }

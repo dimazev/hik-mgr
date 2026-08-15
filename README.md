@@ -355,6 +355,43 @@ resumable, same as a failed or cancelled one.
 
 ## Troubleshooting
 
+### Live view says "Live stream unavailable" (server log shows a 403 on `httpPreview`)
+
+This is a Hikvision device-configuration issue, not a hik-mgr bug — the
+live view (`GET /api/devices/:id/stream`, backed by `streamMjpeg` in
+`apps/server/src/hik/isapi.ts`) proxies the device's ISAPI `httpPreview`
+endpoint. **Read the server log first**, not this list top-to-bottom — the
+`[stream] request failed for ...` line includes the device's own drained
+XML error response (`<statusString>`/`<subStatusCode>`), which tells you
+which of the causes below actually applies instead of guessing:
+
+1. **Wrong stream.** `httpPreview` only ever works over the **sub-stream**
+   — trackID ending in `2` (e.g. `102` for channel 1), never the main
+   stream (`101`). hik-mgr already requests the sub-stream for you (see
+   `liveTrack` in `CameraViewPage.tsx`), so this needs no action on your
+   end — it's here for completeness, not as a thing to go check.
+2. **Wrong codec.** That sub-stream's **video codec must be set to MJPEG**
+   on the device. The near-universal default is H.264/H.265, and
+   requesting those through `httpPreview` is rejected. Fix: on the
+   device's own web UI (or NVR channel config), go to **Configuration >
+   Video/Audio**, select the channel's **sub-stream**, and set **Video
+   Encoding** to **MJPEG**.
+3. **Stream Encryption is on.** A separate security feature, unrelated to
+   codec, that blocks ISAPI preview streaming outright — commonly enabled
+   by default on devices reachable through a DDNS/P2P-style hostname
+   (`*.kozow.com` and similar Hik-Connect-style dynamic DNS, direct
+   port-forwards). Both causes 2 and 3 surface as the exact same `403
+   Forbidden` / `subStatusCode: invalidOperation` from the device, so
+   there's no way to tell them apart except by trying both. Fix: on the
+   device, go to **Configuration > Network > Platform Access** (or
+   **Hik-Connect**) and turn **off** "Enable Stream Encryption".
+4. **Firmware too old.** Hikvision's docs put the minimum at V4.1 for
+   `httpPreview` at all, regardless of codec/encryption settings.
+
+If none of the above resolves it, the page's "Use snapshots instead"
+fallback (a photo that refreshes every second) is the practical ceiling
+for that device — not every model/firmware exposes `httpPreview`.
+
 ### Resuming a download task restarts a file from 0% instead of continuing
 
 Check the server log for that file's line — resuming logs one of two

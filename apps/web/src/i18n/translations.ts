@@ -49,6 +49,11 @@ export const translations: Record<Locale, Record<string, string>> = {
 
     'cameraView.backToDevice': 'Back to device',
     'cameraView.notFound': 'Camera not found.',
+    'cameraView.streamError':
+      'Live stream unavailable. Common causes: the sub-stream isn’t set to MJPEG (Configuration > Video/Audio), or "Stream Encryption" is on under Platform Access / Hik-Connect settings — check the server log for the device’s exact reason.',
+    'cameraView.retry': 'Retry',
+    'cameraView.useSnapshots': 'Use snapshots instead',
+    'cameraView.streamUnavailable': 'Live stream unavailable — showing a snapshot that refreshes every second instead.',
 
     'channel.label': 'Label',
     'channel.saveLabelAria': 'Save label',
@@ -184,6 +189,11 @@ export const translations: Record<Locale, Record<string, string>> = {
 
     'cameraView.backToDevice': 'חזרה למכשיר',
     'cameraView.notFound': 'המצלמה לא נמצאה.',
+    'cameraView.streamError':
+      'שידור חי אינו זמין. סיבות נפוצות: ה-sub-stream אינו מוגדר כ-MJPEG (Configuration > Video/Audio), או ש-"Stream Encryption" מופעל תחת הגדרות Platform Access / Hik-Connect — בדקו את לוג השרת לסיבה המדויקת.',
+    'cameraView.retry': 'ניסיון חוזר',
+    'cameraView.useSnapshots': 'הצגת תמונות במקום',
+    'cameraView.streamUnavailable': 'שידור חי אינו זמין — מוצגת במקום תמונה המתרעננת כל שנייה.',
 
     'channel.label': 'תווית',
     'channel.saveLabelAria': 'שמירת תווית',

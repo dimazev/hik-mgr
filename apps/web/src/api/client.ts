@@ -90,6 +90,17 @@ export const api = {
     if (track) qs.set('track', String(track));
     return `/api/devices/${id}/snapshot?${qs.toString()}`;
   },
+  // A continuous MJPEG feed — meant to be used directly as an <img> src
+  // (see CameraViewPage), not fetched via `request()` like everything else
+  // here. No cache-busting query param needed (unlike snapshotUrl): this
+  // is one long-lived streaming request, not a series of one-shot fetches
+  // a browser might cache.
+  streamUrl: (id: number, track?: number) => {
+    const qs = new URLSearchParams();
+    if (track) qs.set('track', String(track));
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return `/api/devices/${id}/stream${suffix}`;
+  },
   auth: {
     // Deliberately doesn't go through request() — a 401 here just means
     // "not logged in yet", the normal/expected state on first load, not

@@ -110,8 +110,11 @@ declare global {
 
 /** Applied to every route that requires a logged-in session (see server.ts). */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  const session = verifySession(req.cookies?.[SESSION_COOKIE]);
+  const cookie = req.cookies?.[SESSION_COOKIE];
+  const session = verifySession(cookie);
   if (!session) {
+    // eslint-disable-next-line no-console
+    console.warn(`[auth] 401 ${req.method} ${req.originalUrl} from ${req.ip}: ${cookie ? 'session cookie present but invalid or expired' : 'no session cookie sent'}`);
     res.status(401).json({ error: 'Unauthorized' });
     return;
   }

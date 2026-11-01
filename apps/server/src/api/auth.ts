@@ -18,12 +18,17 @@ router.post('/login', (req, res) => {
   const usernameOk = safeCompare(username, env.adminUsername);
   const passwordOk = safeCompare(password, env.adminPassword);
   if (!usernameOk || !passwordOk) {
+    // eslint-disable-next-line no-console
+    console.warn(`[auth] login failed from ${req.ip}: username ${usernameOk ? 'ok' : 'wrong'}, password ${passwordOk ? 'ok' : 'wrong'}`);
     res.status(401).json({ error: 'Invalid username or password' });
     return;
   }
 
   const token = signSession(env.adminUsername);
-  res.cookie(SESSION_COOKIE, token, sessionCookieOptions());
+  const options = sessionCookieOptions();
+  res.cookie(SESSION_COOKIE, token, options);
+  // eslint-disable-next-line no-console
+  console.log(`[auth] login ok from ${req.ip}: cookie secure=${options.secure}, request https=${req.secure}${options.secure && !req.secure ? ' (the browser will drop this Secure cookie over plain http)' : ''}`);
   res.json({ username: env.adminUsername });
 });
 
@@ -38,7 +43,13 @@ router.get('/auto-login', (req, res) => {
   const token = typeof req.query.token === 'string' ? req.query.token : undefined;
   if (verifyShareToken(token)) {
     const sessionToken = signSession(env.adminUsername);
-    res.cookie(SESSION_COOKIE, sessionToken, sessionCookieOptions());
+    const options = sessionCookieOptions();
+    res.cookie(SESSION_COOKIE, sessionToken, options);
+    // eslint-disable-next-line no-console
+    console.log(`[auth] auto-login ok from ${req.ip}: cookie secure=${options.secure}, request https=${req.secure}${options.secure && !req.secure ? ' (the browser will drop this Secure cookie over plain http)' : ''}`);
+  } else {
+    // eslint-disable-next-line no-console
+    console.warn(`[auth] auto-login rejected from ${req.ip}: ${token ? 'token does not match (APP_SECRET changed?)' : 'no token in the URL'}`);
   }
   res.redirect('/');
 });

@@ -95,7 +95,10 @@ export function sessionCookieOptions() {
     // Only require HTTPS for the cookie in production — plain `yarn dev`/
     // `yarn serve` over http://localhost would otherwise silently never
     // send the cookie back and logins would appear to "not stick".
-    secure: process.env.NODE_ENV === 'production',
+    // COOKIE_SECURE=false/true overrides that: a production container used
+    // over plain http on a LAN (http://192.168.x.x:4000) needs false, since
+    // browsers drop Secure cookies from any non-HTTPS origin except localhost.
+    secure: process.env.COOKIE_SECURE ? process.env.COOKIE_SECURE.toLowerCase() === 'true' : process.env.NODE_ENV === 'production',
     maxAge: SESSION_MAX_AGE_MS,
   };
 }

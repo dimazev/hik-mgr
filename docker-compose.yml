@@ -12,6 +12,9 @@ services:
       # explicitly here — Compose fills in ${...} from the root .env file
       # automatically. Without these, the container silently fell back to
       # the built-in insecure defaults in env.ts instead of what's in .env.
+      # false = the login cookie works over plain http on the LAN; set true
+      # when the app is only reached through HTTPS (a reverse proxy).
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
       # Optional one-time device seed — safe to leave unset in .env, in

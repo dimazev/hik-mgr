@@ -214,6 +214,7 @@ Open the `hik-mgr` folder in VS Code (not a parent folder — the paths in
 | `DB_PATH`     | `./data/hik-mgr.sqlite`     | SQLite file location. In Docker this is `/app/data/hik-mgr.sqlite`, on the `data` volume. |
 | `ADMIN_USERNAME` | `admin`                  | Login username for the whole app (see [Authentication](#authentication)). |
 | `ADMIN_PASSWORD` | *(insecure dev default)* | Login password. Set a real value before running this anywhere beyond your own machine. |
+| `COOKIE_SECURE` | `true` in production, else `false` (the Docker compose file sets `false`) | Whether the login cookie is marked Secure. Browsers drop Secure cookies on plain-http origins other than `localhost`, so use `false` when the app is reached over http on a LAN and `true` behind HTTPS. |
 | `HIK_NAME`    | *(unset)*                    | Optional. Display name for the seed device (see below). Defaults to `HIK_HOST` if unset. |
 | `HIK_HOST`    | *(unset)*                    | Optional. Hikvision device host, e.g. `b22.kozow.com`. |
 | `HIK_PORT`    | `80`                         | Optional. |

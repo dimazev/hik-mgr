@@ -16,7 +16,6 @@ function toPublicTask(row: DownloadTaskRow, deviceName: string, channelNames: st
     id: row.id,
     deviceId: row.deviceId,
     deviceName,
-    timeZone: row.timeZone,
     status: row.status as DownloadTaskStatus,
     totalFiles: row.totalFiles,
     completedFiles: row.completedFiles,
@@ -80,9 +79,9 @@ function toPublicFile(row: DownloadTaskFileRow) {
  * downloadWorker.runDownloadTask afterward — this function only persists
  * the task, it doesn't start downloading anything.
  */
-export function createDownloadTask(deviceId: number, files: DownloadTaskFileInput[], timeZone?: string): number {
+export function createDownloadTask(deviceId: number, files: DownloadTaskFileInput[]): number {
   return db.transaction((tx) => {
-    const result = tx.insert(downloadTasks).values({ deviceId, totalFiles: files.length, timeZone: timeZone ?? null }).run();
+    const result = tx.insert(downloadTasks).values({ deviceId, totalFiles: files.length }).run();
     const taskId = Number(result.lastInsertRowid);
     for (const f of files) {
       tx.insert(downloadTaskFiles)
@@ -272,3 +271,4 @@ export function listFinishedTaskIds(): { id: number; updatedAt: string }[] {
 export function updateTaskFileTimes(fileId: number, times: { startTime?: string | null; endTime?: string | null }): void {
   db.update(downloadTaskFiles).set(times).where(eq(downloadTaskFiles.id, fileId)).run();
 }
+

@@ -72,10 +72,10 @@ export const api = {
   // single recording straight to the browser — see the Recordings tab /
   // recording files page's single "Download" button, and TasksPage for
   // tracking progress afterward.
-  createDownloadTask: (deviceId: number, files: DownloadTaskFileInput[], timeZone?: string) =>
+  createDownloadTask: (deviceId: number, files: DownloadTaskFileInput[]) =>
     request<{ taskId: number }>(`/api/devices/${deviceId}/download-tasks`, {
       method: 'POST',
-      body: JSON.stringify({ files, timeZone }),
+      body: JSON.stringify({ files }),
     }),
   listDownloadTasks: () => request<DownloadTask[]>('/api/tasks'),
   getDownloadTask: (taskId: number) => request<DownloadTaskDetail>(`/api/tasks/${taskId}`),

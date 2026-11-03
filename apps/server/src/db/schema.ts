@@ -70,7 +70,6 @@ export type RecordingHistoryRow = typeof recordingHistory.$inferSelect;
 // progress.
 export const downloadTasks = sqliteTable('download_tasks', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  timeZone: text('time_zone'),
   deviceId: integer('device_id').notNull(),
   status: text('status', { enum: ['pending', 'running', 'completed', 'failed', 'cancelled', 'interrupted'] })
     .notNull()

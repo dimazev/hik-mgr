@@ -81,9 +81,6 @@ export const env = {
   // becomes 2 parts. The cut is a stream copy, so the picture quality is not touched.
   // Every converted video is cut into at least this many parts (default 2), however small - one file can still be too
   // big for WhatsApp to take as a video.
-  // Zone for the names of downloaded files when a task still holds UTC times (tasks made before they were stored in local
-  // time). Empty = the server's own zone. Example: Asia/Jerusalem
-  displayTimeZone: process.env.DISPLAY_TZ || undefined,
   convertMinParts: Math.max(1, Math.floor(Number(process.env.CONVERT_MIN_PARTS || 2))),
   convertMaxPartMb: Math.max(5, Number(process.env.CONVERT_MAX_PART_MB || 100)),
   hikDefault: hikDefault(),

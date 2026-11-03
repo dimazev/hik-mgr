@@ -36,18 +36,15 @@ import { api } from '../api/client';
 import { useLocale } from '../i18n/LocaleContext';
 import { SnapshotImage } from '../components/SnapshotImage';
 import { DayTimeField } from '../components/DayTimeField';
+import { formatWallClock } from '@hik-mgr/shared';
 
 function formatSince(iso: string, locale: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
+  return formatWallClock(iso, locale, false);
 }
 
 /** Formats an ISO timestamp for display in the search summary line. */
 function formatDateTime(iso: string, locale: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return formatWallClock(iso, locale);
 }
 
 
@@ -470,10 +467,12 @@ function RecordingsTab({ id }: { id: number }) {
 
   const handleSearch = () => {
     if (!canSearch || !selectedChannelIds) return;
-    const start = new Date(startInput);
-    const end = new Date(endInput);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return;
-    setRange({ start: start.toISOString(), end: end.toISOString(), channelIds: [...selectedChannelIds] });
+    // The camera reads the times it is sent as ITS OWN clock and ignores the "Z" - so the time typed here (15:00) goes
+    // out as is. Converting it to UTC made a search for 15:00 return the recordings of 13:00.
+    const start = `${startInput}:00Z`;
+    const end = `${endInput}:00Z`;
+    if (Number.isNaN(Date.parse(start)) || Number.isNaN(Date.parse(end))) return;
+    setRange({ start, end, channelIds: [...selectedChannelIds] });
   };
 
   const files = q.data?.files ?? [];
@@ -495,13 +494,14 @@ function RecordingsTab({ id }: { id: number }) {
         <DayTimeField
           label={t('recordings.start')}
           value={startInput}
+          onEnter={handleSearch}
           onChange={(v) => {
             setStartInput(v);
             // the end starts out equal to the start (and is pulled forward if it would end up before it)
             if (v && (endInput === '' || endInput < v)) setEndInput(v);
           }}
         />
-        <DayTimeField label={t('recordings.end')} value={endInput} onChange={setEndInput} />
+        <DayTimeField label={t('recordings.end')} value={endInput} onChange={setEndInput} onEnter={handleSearch} />
         <Button variant="contained" size="small" onClick={handleSearch} disabled={!canSearch || q.isFetching}>
           {t('recordings.search')}
         </Button>

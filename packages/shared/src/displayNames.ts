@@ -1,35 +1,16 @@
 /**
  * Names shown to the user (and given to the downloaded file) for a recording or one part of it:
  *   <camera label>_<MM-DD>_<HH-mm>_<HH-mm>   e.g. Front-door_08-13_13-00_13-12
- * No year. The times are the device's own wall-clock times, used exactly as written - no timezone conversion.
+ * No year.
+ *
+ * Times are the CAMERA'S OWN CLOCK, exactly as written. A Hikvision device writes its local time with a trailing "Z"
+ * ("2026-11-03T15:00:05Z"), and reads the times it is sent the same way - the "Z" does not mean UTC, so no time-zone
+ * conversion is ever done here. Converting made a search for 15:00 return the 13:00 recordings.
  */
 
-const ZONE_SUFFIX = /(Z|[+-]\d{2}:?\d{2})$/i;
-
-/**
- * The wall-clock time of a timestamp, as milliseconds in a timezone-free (UTC) frame.
- * - With a zone (the device sends UTC: "...13:00:05Z") it is a real instant, shown in `timeZone` - the browser's own
- *   zone when none is given, so a recording made at 15:00 local reads 15:00 and not 13:00.
- * - Without a zone ("2026-08-13T15:00:05") it is already local wall-clock time and is used exactly as written.
- */
-function wallClockMs(iso: string | null | undefined, timeZone?: string): number | null {
+/** The clock time written in a timestamp, as milliseconds in a timezone-free (UTC) frame. The zone suffix is ignored. */
+function wallClockMs(iso: string | null | undefined): number | null {
   if (!iso) return null;
-  if (ZONE_SUFFIX.test(iso)) {
-    const instant = Date.parse(iso);
-    if (Number.isNaN(instant)) return null;
-    const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone: timeZone || undefined,
-      hourCycle: 'h23',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    }).formatToParts(new Date(instant));
-    const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
-    return Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
-  }
   const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/.exec(iso);
   if (!m) return null;
   return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6] ?? 0));
@@ -54,12 +35,11 @@ export function partRange(
   endTime: string | null | undefined,
   partSeconds: number[] | null | undefined,
   parts: number,
-  part: number,
-  timeZone?: string
+  part: number
 ): { startMs: number; endMs: number | null } | null {
-  const start = wallClockMs(startTime, timeZone);
+  const start = wallClockMs(startTime);
   if (start === null) return null;
-  const end = wallClockMs(endTime, timeZone);
+  const end = wallClockMs(endTime);
   if (parts <= 1) return { startMs: start, endMs: end };
   // each part's real length when it was measured; otherwise the recording cut into equal parts
   const lengths =
@@ -83,8 +63,8 @@ export function partTimeText(range: { startMs: number; endMs: number | null }): 
 }
 
 /** Month/day and time text for tables: "08/13 13:00" - no year. */
-export function dayTimeText(iso: string | null | undefined, timeZone?: string): string {
-  const ms = wallClockMs(iso, timeZone);
+export function dayTimeText(iso: string | null | undefined): string {
+  const ms = wallClockMs(iso);
   return ms === null ? (iso ?? '—') : `${mmdd(ms, '/')} ${hhmm(ms, ':')}`;
 }
 
@@ -96,11 +76,9 @@ export function recordingName(opts: {
   partSeconds?: number[] | null;
   parts?: number;
   part?: number;
-  /** zone to show a UTC timestamp in (default: the runtime's own) */
-  timeZone?: string;
 }): string {
   const label = safeLabel(opts.label);
-  const range = partRange(opts.startTime, opts.endTime, opts.partSeconds, opts.parts ?? 1, opts.part ?? 1, opts.timeZone);
+  const range = partRange(opts.startTime, opts.endTime, opts.partSeconds, opts.parts ?? 1, opts.part ?? 1);
   if (!range) return opts.parts && opts.parts > 1 ? `${label}_part${opts.part ?? 1}` : label;
   const day = mmdd(range.startMs, '-');
   if (range.endMs === null) return `${label}_${day}_${hhmm(range.startMs, '-')}`;
@@ -139,4 +117,17 @@ export function fileTimes(
 export function addSeconds(startTime: string, seconds: number): string | null {
   const t = Date.parse(startTime);
   return Number.isNaN(t) ? null : new Date(t + Math.round(seconds * 1000)).toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+
+/** "Nov 3, 15:00" - a camera timestamp for people, month and day without a year, never shifted by a time zone. */
+export function formatWallClock(iso: string | null | undefined, locale: string, withTime = true): string {
+  const ms = wallClockMs(iso);
+  if (ms === null) return iso ?? '—';
+  return new Date(ms).toLocaleString(locale, {
+    timeZone: 'UTC', // the value is already the camera's clock; UTC here only stops the browser shifting it
+    month: 'short',
+    day: 'numeric',
+    ...(withTime ? { hour: '2-digit', minute: '2-digit' } : {}),
+  });
 }

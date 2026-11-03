@@ -93,7 +93,8 @@ const CONVERT_STATUS_KEY: Record<DownloadTaskFileConvertStatus, string> = {
 };
 
 function formatDateTime(iso: string, locale: string): string {
-  const d = new Date(iso);
+  // SQLite writes "YYYY-MM-DD HH:MM:SS" in UTC with no zone mark - read it as UTC, then show it in local time
+  const d = new Date(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(iso) ? `${iso.replace(' ', 'T')}Z` : iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleString(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
@@ -150,7 +151,7 @@ function FileProgress({ file }: { file: DownloadTaskFile }) {
  * the converted copy straight from the server, unlike the raw downloaded
  * file which stays server-side) once it's 'done'.
  */
-function ConvertSubtask({ taskId, file, taskActive, timeZone }: { taskId: number; file: DownloadTaskFile; taskActive: boolean; timeZone: string | null }) {
+function ConvertSubtask({ taskId, file, taskActive }: { taskId: number; file: DownloadTaskFile; taskActive: boolean }) {
   const { t } = useLocale();
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -196,7 +197,7 @@ function ConvertSubtask({ taskId, file, taskActive, timeZone }: { taskId: number
               {(() => {
                 if (file.convertParts == null || file.convertParts === 1) return t('recordingFiles.download');
                 // each part is labelled with the time it covers
-                const range = partRange(file.startTime, file.endTime, file.convertPartSeconds, file.convertParts, part, timeZone ?? undefined);
+                const range = partRange(file.startTime, file.endTime, file.convertPartSeconds, file.convertParts, part);
                 return range ? partTimeText(range) : t('tasks.part', { n: part });
               })()}
             </Button>
@@ -440,7 +441,7 @@ function TaskRow({ task }: { task: DownloadTask }) {
                     {detailQuery.data.files.map((f) => (
                       <TableRow key={f.id}>
                         <TableCell>{f.channelName}</TableCell>
-                        <TableCell>{`${recordingName({ label: f.channelName, startTime: f.startTime, endTime: f.endTime, timeZone: task.timeZone ?? undefined })}.mp4`}</TableCell>
+                        <TableCell>{`${recordingName({ label: f.channelName, startTime: f.startTime, endTime: f.endTime })}.mp4`}</TableCell>
                         <TableCell>
                           <Chip size="small" label={t(FILE_STATUS_KEY[f.status])} color={FILE_STATUS_COLOR[f.status]} />
                           {f.error && (
@@ -453,7 +454,7 @@ function TaskRow({ task }: { task: DownloadTask }) {
                           <FileProgress file={f} />
                         </TableCell>
                         <TableCell>
-                          <ConvertSubtask taskId={task.id} file={f} taskActive={isActive(task.status)} timeZone={task.timeZone} />
+                          <ConvertSubtask taskId={task.id} file={f} taskActive={isActive(task.status)} />
                         </TableCell>
                       </TableRow>
                     ))}

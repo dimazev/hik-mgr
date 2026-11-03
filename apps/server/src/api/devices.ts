@@ -370,7 +370,7 @@ router.post(
       return;
     }
 
-    const taskId = createDownloadTask(deviceId, parsed.data.files, parsed.data.timeZone);
+    const taskId = createDownloadTask(deviceId, parsed.data.files);
 
     runDownloadTask(taskId, toConn(row)).catch((err) => {
       // eslint-disable-next-line no-console

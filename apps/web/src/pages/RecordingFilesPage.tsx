@@ -22,7 +22,7 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogActions from '@mui/material/DialogActions';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
-import { dayTimeText, fileTimes, recordingName, type DownloadTaskFileInput } from '@hik-mgr/shared';
+import { dayTimeText, fileTimes, formatWallClock, recordingName, type DownloadTaskFileInput } from '@hik-mgr/shared';
 import { api } from '../api/client';
 import { useLocale } from '../i18n/LocaleContext';
 
@@ -42,9 +42,7 @@ function friendlyFileName(channelName: string | null | undefined, startTime: str
 }
 
 function formatDateTime(iso: string, locale: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return formatWallClock(iso, locale);
 }
 
 /**
@@ -104,8 +102,7 @@ export default function RecordingFilesPage() {
   const toggleAll = () => setDeselected(selectedIdx.length === files.length ? new Set(files.map((_, i) => i)) : new Set());
 
   const createTaskMutation = useMutation({
-    // the browser's time zone: the device reports UTC, the names and lists show the user's own time
-    mutationFn: (payload: DownloadTaskFileInput[]) => api.createDownloadTask(deviceId, payload, Intl.DateTimeFormat().resolvedOptions().timeZone),
+    mutationFn: (payload: DownloadTaskFileInput[]) => api.createDownloadTask(deviceId, payload),
     onSuccess: () => navigate('/tasks'),
   });
 

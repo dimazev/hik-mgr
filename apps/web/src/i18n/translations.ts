@@ -114,6 +114,9 @@ export const translations: Record<Locale, Record<string, string>> = {
     'recordingFiles.confirmBody':
       'This queues {count} {fileWord} from {channelCount} {channelWord} as a background download task. The server downloads them one at a time — track progress on the Tasks page.',
     'recordingFiles.download': 'Download',
+    'recordings.today': 'Today',
+    'recordings.yesterday': 'Yesterday',
+    'recordings.timeSuffix': 'time',
     'recordingFiles.selectAllAria': 'Select all files',
     'recordingFiles.selectFileAria': 'Select file',
     'recordingFiles.selectedOf': '{selected} of {total} selected',
@@ -273,6 +276,9 @@ export const translations: Record<Locale, Record<string, string>> = {
     'recordingFiles.confirmBody':
       'הפעולה תוסיף {count} {fileWord} מתוך {channelCount} {channelWord} למשימת הורדה ברקע. השרת יוריד אותם קובץ אחר קובץ — ניתן לעקוב אחר ההתקדמות בעמוד המשימות.',
     'recordingFiles.download': 'הורדה',
+    'recordings.today': 'היום',
+    'recordings.yesterday': 'אתמול',
+    'recordings.timeSuffix': 'שעה',
     'recordingFiles.selectAllAria': 'בחירת כל הקבצים',
     'recordingFiles.selectFileAria': 'בחירת קובץ',
     'recordingFiles.selectedOf': '{selected} מתוך {total} נבחרו',

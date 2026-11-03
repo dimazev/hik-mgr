@@ -132,8 +132,6 @@ export type DownloadTaskFileInput = z.infer<typeof downloadTaskFileInputSchema>;
 /** Body for POST /api/devices/:id/download-tasks */
 export const createDownloadTaskSchema = z.object({
   files: z.array(downloadTaskFileInputSchema).min(1, 'At least one file is required'),
-  /** the user's IANA time zone (e.g. Asia/Jerusalem): the device reports UTC, names and lists show this zone */
-  timeZone: z.string().max(100).optional(),
 });
 export type CreateDownloadTaskInput = z.infer<typeof createDownloadTaskSchema>;
 
@@ -165,8 +163,6 @@ export interface DownloadTaskFile extends DownloadTaskFileInput {
 
 export interface DownloadTask {
   id: number;
-  /** zone the file times are shown in (null on tasks made before it was stored) */
-  timeZone: string | null;
   deviceId: number;
   deviceName: string;
   status: DownloadTaskStatus;

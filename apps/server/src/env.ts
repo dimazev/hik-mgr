@@ -79,6 +79,9 @@ export const env = {
   downloadsDir: resolveDownloadsDir(),
   // A converted video bigger than this (MB) is cut into the fewest equal parts that each stay under it - e.g. 150 MB
   // becomes 2 parts. The cut is a stream copy, so the picture quality is not touched.
+  // Every converted video is cut into at least this many parts (default 2), however small - one file can still be too
+  // big for WhatsApp to take as a video.
+  convertMinParts: Math.max(1, Math.floor(Number(process.env.CONVERT_MIN_PARTS || 2))),
   convertMaxPartMb: Math.max(5, Number(process.env.CONVERT_MAX_PART_MB || 100)),
   hikDefault: hikDefault(),
   // Single-admin login gating the whole app (see auth.ts / api/auth.ts).

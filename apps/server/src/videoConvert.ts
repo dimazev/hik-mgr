@@ -108,11 +108,14 @@ export function probeDuration(filePath: string): Promise<number | null> {
   });
 }
 
-/** How many equal parts a file of `sizeBytes` must be cut into so each stays under `maxBytes` (1 = no split needed). */
-export function partsNeeded(sizeBytes: number, maxBytes: number): number {
-  if (sizeBytes <= maxBytes) return 1;
+/**
+ * How many equal parts a file of `sizeBytes` must be cut into: enough that each stays under `maxBytes`, and never
+ * fewer than `minParts`.
+ */
+export function partsNeeded(sizeBytes: number, maxBytes: number, minParts = 1): number {
   // 10% headroom: the cuts can only fall on keyframes, so the parts are not exactly equal
-  return Math.ceil(sizeBytes / (maxBytes * 0.9));
+  const bySize = sizeBytes <= maxBytes ? 1 : Math.ceil(sizeBytes / (maxBytes * 0.9));
+  return Math.max(minParts, bySize);
 }
 
 /**

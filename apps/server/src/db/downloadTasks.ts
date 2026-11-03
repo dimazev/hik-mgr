@@ -38,6 +38,16 @@ function distinctChannelNames(fileRows: { channelName: string }[]): string[] {
   return out;
 }
 
+function parsePartSeconds(json: string | null): number[] | null {
+  if (!json) return null;
+  try {
+    const parsed = JSON.parse(json);
+    return Array.isArray(parsed) && parsed.every((n) => typeof n === 'number') ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function toPublicFile(row: DownloadTaskFileRow) {
   return {
     id: row.id,
@@ -57,6 +67,7 @@ function toPublicFile(row: DownloadTaskFileRow) {
     convertProgress: row.convertProgress,
     convertError: row.convertError,
     convertParts: row.convertParts,
+    convertPartSeconds: parsePartSeconds(row.convertPartSeconds),
   };
 }
 
@@ -169,10 +180,11 @@ export function updateTaskFileProgress(
 export function updateTaskFileConvertStatus(
   fileId: number,
   convertStatus: DownloadTaskFileConvertStatus,
-  extra: { convertError?: string | null; convertParts?: number | null } = {}
+  extra: { convertError?: string | null; convertParts?: number | null; convertPartSeconds?: number[] | null } = {}
 ): void {
+  const { convertPartSeconds, ...rest } = extra;
   db.update(downloadTaskFiles)
-    .set({ convertStatus, ...extra })
+    .set({ convertStatus, ...rest, ...(convertPartSeconds === undefined ? {} : { convertPartSeconds: convertPartSeconds ? JSON.stringify(convertPartSeconds) : null }) })
     .where(eq(downloadTaskFiles.id, fileId))
     .run();
 }
@@ -226,6 +238,14 @@ export function markStaleRunningTasksInterrupted(): number {
     }
   }
   return stale.length;
+}
+
+/** Puts a file's conversion back to 'pending' and forgets its parts, so the worker converts it again. */
+export function resetFileConversion(fileId: number): void {
+  db.update(downloadTaskFiles)
+    .set({ convertStatus: 'pending', convertProgress: null, convertError: null, convertParts: null, convertPartSeconds: null })
+    .where(eq(downloadTaskFiles.id, fileId))
+    .run();
 }
 
 /** Removes a task and its file rows. The files on disk are the caller's job (see taskCleanup.ts). */

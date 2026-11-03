@@ -28,6 +28,8 @@ services:
       HIK_PASSWORD: ${HIK_PASSWORD:-}
       # Biggest size (MB) of one part of a converted video (see .env.example).
       CONVERT_MAX_PART_MB: ${CONVERT_MAX_PART_MB:-100}
+      # Fewest parts a converted video is cut into.
+      CONVERT_MIN_PARTS: ${CONVERT_MIN_PARTS:-2}
     volumes:
       # Bind-mounts the whole repo into the container so source edits made
       # on the host are visible inside it immediately. Combined with

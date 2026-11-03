@@ -109,6 +109,8 @@ export const downloadTaskFiles = sqliteTable('download_task_files', {
   convertError: text('convert_error'),
   // How many time parts the converted video was cut into (null = converted before splitting existed: one file).
   convertParts: integer('convert_parts'),
+  // JSON array: the length in seconds of each part, so every part can be named with its own start and end time.
+  convertPartSeconds: text('convert_part_seconds'),
 });
 
 export type DownloadTaskFileRow = typeof downloadTaskFiles.$inferSelect;

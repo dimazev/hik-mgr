@@ -5,12 +5,20 @@ import { eq } from 'drizzle-orm';
 import { db } from '../db/client';
 import { devices } from '../db/schema';
 import { decryptSecret } from '../crypto';
-import { getDownloadTask, listDownloadTasks, updateTaskStatus } from '../db/downloadTasks';
+import {
+  getDownloadTask,
+  incrementTaskCounts,
+  listDownloadTasks,
+  resetFileConversion,
+  updateTaskFileStatus,
+  updateTaskStatus,
+} from '../db/downloadTasks';
 import { runDownloadTask, requestCancelTask, isTaskActive } from '../downloadWorker';
-import { convertedFilename, convertedPartFilename } from '../fileNaming';
+import { convertedFilename, convertedPartFilename, listConvertedParts, sanitizeFilename } from '../fileNaming';
 import { deleteFinishedTasksOlderThan, deleteTaskAndFiles } from '../taskCleanup';
 import { env } from '../env';
 import type { DeviceConn } from '../hik/isapi';
+import { recordingName } from '@hik-mgr/shared';
 
 // Global (not device-scoped) — the Tasks page shows every download task
 // across every device, so this is its own router rather than nested under
@@ -153,10 +161,11 @@ router.get(
     const taskDir = path.join(env.downloadsDir, `task-${taskId}`);
     // Videos converted before splitting existed (convertParts = null) are one file; newer ones are numbered parts.
     let outName: string;
+    let part = 1;
     if (file.convertParts == null) {
       outName = convertedFilename(file.filename);
     } else {
-      const part = req.query.part === undefined ? 1 : Number(req.query.part);
+      part = req.query.part === undefined ? 1 : Number(req.query.part);
       if (!Number.isInteger(part) || part < 1 || part > file.convertParts) {
         res.status(400).json({ error: `part must be 1..${file.convertParts}` });
         return;
@@ -169,7 +178,9 @@ router.get(
       return;
     }
 
-    res.download(convertedPath, outName);
+    // the name the user gets: camera label, day, start and end time of this part (the file on disk keeps its own safe name)
+    const downloadName = `${recordingName({ label: file.channelName, startTime: file.startTime, endTime: file.endTime, partSeconds: file.convertPartSeconds, parts: file.convertParts ?? 1, part })}.mp4`;
+    res.download(convertedPath, downloadName);
   })
 );
 
@@ -203,6 +214,65 @@ router.post(
       return;
     }
     res.json(deleteFinishedTasksOlderThan(olderThanDays, isTaskActive));
+  })
+);
+
+// Converts again: deletes the converted files (all parts) of one file - or of every file of the task when no fileId is
+// given - and runs the conversion again from the downloaded original. If the original is gone from the disk too, it is
+// downloaded again first.
+router.post(
+  '/:taskId/reconvert',
+  asyncHandler(async (req, res) => {
+    const taskId = Number(req.params.taskId);
+    const task = getDownloadTask(taskId);
+    if (!task) {
+      res.status(404).json({ error: 'Task not found' });
+      return;
+    }
+    if (task.status === 'running' || task.status === 'pending' || isTaskActive(taskId)) {
+      res.status(400).json({ error: 'Task is in progress - cancel it first' });
+      return;
+    }
+    const fileId = req.body?.fileId === undefined ? undefined : Number(req.body.fileId);
+    const targets = fileId === undefined ? task.files : task.files.filter((f) => f.id === fileId);
+    if (targets.length === 0) {
+      res.status(404).json({ error: 'File not found' });
+      return;
+    }
+
+    const deviceRow = db.select().from(devices).where(eq(devices.id, task.deviceId)).get();
+    if (!deviceRow) {
+      res.status(404).json({ error: 'The device this task belongs to no longer exists' });
+      return;
+    }
+
+    const conn: DeviceConn = {
+      protocol: deviceRow.protocol as 'http' | 'https',
+      host: deviceRow.host,
+      port: deviceRow.port,
+      username: deviceRow.username,
+      password: decryptSecret(deviceRow.passwordEnc),
+    };
+
+
+    const taskDir = path.join(env.downloadsDir, `task-${taskId}`);
+    for (const file of targets) {
+      for (const part of listConvertedParts(taskDir, file.filename)) fs.rmSync(path.join(taskDir, part), { force: true });
+      fs.rmSync(path.join(taskDir, convertedFilename(file.filename)), { force: true });
+      resetFileConversion(file.id);
+      // the original is needed to convert; when it is gone, the file is downloaded again too
+      if (!fs.existsSync(path.join(taskDir, sanitizeFilename(file.filename)))) {
+        updateTaskFileStatus(file.id, 'pending', { downloadedBytes: 0, totalBytes: null, etaSeconds: null, error: null });
+        if (file.status === 'done') incrementTaskCounts(taskId, { completed: -1 });
+      }
+    }
+
+    runDownloadTask(taskId, conn).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error(`Download task ${taskId} crashed on reconvert:`, err);
+      updateTaskStatus(taskId, 'failed');
+    });
+    res.json({ ok: true });
   })
 );
 

@@ -157,6 +157,8 @@ export interface DownloadTaskFile extends DownloadTaskFileInput {
   convertError: string | null;
   /** Time parts the converted video was cut into (each small enough for WhatsApp); null = one file, converted before splitting existed. */
   convertParts: number | null;
+  /** Length in seconds of each part, in order (null when not measured, or for a single file). */
+  convertPartSeconds: number[] | null;
 }
 
 export interface DownloadTask {

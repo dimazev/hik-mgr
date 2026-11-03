@@ -22,7 +22,7 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogActions from '@mui/material/DialogActions';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
-import type { DownloadTaskFileInput } from '@hik-mgr/shared';
+import { dayTimeText, recordingName, type DownloadTaskFileInput } from '@hik-mgr/shared';
 import { api } from '../api/client';
 import { useLocale } from '../i18n/LocaleContext';
 
@@ -44,7 +44,7 @@ function friendlyFileName(channelName: string | null | undefined, startTime: str
 function formatDateTime(iso: string, locale: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(locale, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 /**
@@ -188,9 +188,9 @@ export default function RecordingFilesPage() {
                       />
                     </TableCell>
                     <TableCell>{f.deviceChannelName ?? '—'}</TableCell>
-                    <TableCell>{friendlyFileName(f.deviceChannelName, f.startTime, i)}</TableCell>
-                    <TableCell>{f.startTime ?? '—'}</TableCell>
-                    <TableCell>{f.endTime ?? '—'}</TableCell>
+                    <TableCell>{`${recordingName({ label: f.deviceChannelName, startTime: f.startTime, endTime: f.endTime })}.mp4`}</TableCell>
+                    <TableCell>{dayTimeText(f.startTime)}</TableCell>
+                    <TableCell>{dayTimeText(f.endTime)}</TableCell>
                     <TableCell>{f.sizeBytes ?? '—'}</TableCell>
                   </TableRow>
                 ))}

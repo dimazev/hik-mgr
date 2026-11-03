@@ -31,6 +31,7 @@ import ReplayIcon from '@mui/icons-material/Replay';
 import DeleteIcon from '@mui/icons-material/Delete';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import { partRange, partTimeText, recordingName } from '@hik-mgr/shared';
 import type {
   DownloadTask,
   DownloadTaskFile,
@@ -94,7 +95,7 @@ const CONVERT_STATUS_KEY: Record<DownloadTaskFileConvertStatus, string> = {
 function formatDateTime(iso: string, locale: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(locale, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 function isActive(status: DownloadTaskStatus): boolean {
@@ -177,7 +178,12 @@ function ConvertSubtask({ taskId, file }: { taskId: number; file: DownloadTaskFi
               rel="noreferrer"
               startIcon={<FileDownloadIcon fontSize="small" />}
             >
-              {file.convertParts == null || file.convertParts === 1 ? t('recordingFiles.download') : t('tasks.part', { n: part })}
+              {(() => {
+                if (file.convertParts == null || file.convertParts === 1) return t('recordingFiles.download');
+                // each part is labelled with the time it covers
+                const range = partRange(file.startTime, file.endTime, file.convertPartSeconds, file.convertParts, part);
+                return range ? partTimeText(range) : t('tasks.part', { n: part });
+              })()}
             </Button>
           ))}
         </Stack>
@@ -371,7 +377,7 @@ function TaskRow({ task }: { task: DownloadTask }) {
                     {detailQuery.data.files.map((f) => (
                       <TableRow key={f.id}>
                         <TableCell>{f.channelName}</TableCell>
-                        <TableCell>{f.filename}</TableCell>
+                        <TableCell>{`${recordingName({ label: f.channelName, startTime: f.startTime, endTime: f.endTime })}.mp4`}</TableCell>
                         <TableCell>
                           <Chip size="small" label={t(FILE_STATUS_KEY[f.status])} color={FILE_STATUS_COLOR[f.status]} />
                           {f.error && (

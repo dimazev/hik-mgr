@@ -35,18 +35,19 @@ import type { Channel } from '@hik-mgr/shared';
 import { api } from '../api/client';
 import { useLocale } from '../i18n/LocaleContext';
 import { SnapshotImage } from '../components/SnapshotImage';
+import { DayTimeField } from '../components/DayTimeField';
 
 function formatSince(iso: string, locale: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
+  return d.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
 }
 
 /** Formats an ISO timestamp for display in the search summary line. */
 function formatDateTime(iso: string, locale: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(locale, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 
@@ -491,22 +492,16 @@ function RecordingsTab({ id }: { id: number }) {
   return (
     <Stack spacing={2}>
       <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
-        <TextField
+        <DayTimeField
           label={t('recordings.start')}
-          type="datetime-local"
-          size="small"
           value={startInput}
-          onChange={(e) => setStartInput(e.target.value)}
-          slotProps={{ inputLabel: { shrink: true } }}
+          onChange={(v) => {
+            setStartInput(v);
+            // the end starts out equal to the start (and is pulled forward if it would end up before it)
+            if (v && (endInput === '' || endInput < v)) setEndInput(v);
+          }}
         />
-        <TextField
-          label={t('recordings.end')}
-          type="datetime-local"
-          size="small"
-          value={endInput}
-          onChange={(e) => setEndInput(e.target.value)}
-          slotProps={{ inputLabel: { shrink: true } }}
-        />
+        <DayTimeField label={t('recordings.end')} value={endInput} onChange={setEndInput} />
         <Button variant="contained" size="small" onClick={handleSearch} disabled={!canSearch || q.isFetching}>
           {t('recordings.search')}
         </Button>

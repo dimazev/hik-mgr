@@ -106,17 +106,131 @@ export async function runDownloadTask(taskId: number, conn: DeviceConn): Promise
   const taskDir = path.join(env.downloadsDir, `task-${taskId}`);
   fs.mkdirSync(taskDir, { recursive: true });
 
+  // Conversions run strictly one at a time (one ffmpeg) but in parallel with the downloads: while file N converts,
+  // file N+1 is already downloading.
+  type TaskFile = (typeof outstanding)[number];
+  const convertQueue: TaskFile[] = [];
+  let downloadsDone = false;
+  let converterWaiting: (() => void) | null = null;
+  const wakeConverter = () => {
+    const wake = converterWaiting;
+    converterWaiting = null;
+    wake?.();
+  };
+
+  const convertOne = async (file: TaskFile): Promise<void> => {
+    const destPath = path.join(taskDir, sanitizeFilename(file.filename));
+        updateTaskFileConvertStatus(file.id, 'converting', { convertError: null });
+        updateTaskFileConvertProgress(file.id, null);
+        // Parts left by an earlier, interrupted conversion (and the single file of the pre-splitting format) would be
+        // mixed up with the new ones.
+        for (const old of listConvertedParts(taskDir, file.filename)) fs.rmSync(path.join(taskDir, old), { force: true });
+        fs.rmSync(path.join(taskDir, convertedFilename(file.filename)), { force: true });
+        log(taskId, `converting "${file.filename}" (scale 1280x720, crf 26)`);
+
+        let lastConvertReported = 0;
+        const onConvertProgress = (p: ConvertProgress) => {
+          const now = Date.now();
+          if (now - lastConvertReported < 1000) return;
+          lastConvertReported = now;
+          const rounded = p.percent !== null ? Math.round(p.percent) : null;
+          updateTaskFileConvertProgress(file.id, rounded);
+          log(taskId, `  converting "${file.filename}": ${rounded !== null ? `${rounded}%` : `${Math.round((p.elapsedSeconds ?? 0))}s elapsed`}`);
+        };
+
+        try {
+          const fullPath = path.join(taskDir, convertedFilename(file.filename));
+          await convertVideo(destPath, fullPath, onConvertProgress, {
+            onProcessStart: (proc) => {
+              active.activeConvertProcess = proc;
+            },
+          });
+          active.activeConvertProcess = undefined;
+
+          // Cut into at least env.convertMinParts equal parts (and more when a part would exceed the size limit) - a
+          // stream copy, so the quality of the conversion above is untouched.
+          const maxBytes = env.convertMaxPartMb * 1024 * 1024;
+          const fullBytes = fs.statSync(fullPath).size;
+          const duration = await probeDuration(fullPath);
+          // a clip of a few seconds has no room for a second keyframe to cut at - keep it whole
+          const wanted = duration !== null && duration < 20 && fullBytes <= maxBytes ? 1 : partsNeeded(fullBytes, maxBytes, env.convertMinParts);
+          let parts = 1;
+          if (wanted === 1) {
+            fs.renameSync(fullPath, path.join(taskDir, convertedPartFilename(file.filename, 1)));
+          } else {
+            if (!duration) throw new Error('could not read the converted video length to split it');
+            log(taskId, `splitting "${file.filename}" (${Math.round(fullBytes / 1048576)} MB) into ${wanted} parts`);
+            await splitVideo(fullPath, taskDir, convertedPartPattern(file.filename), duration, wanted);
+            fs.rmSync(fullPath, { force: true });
+            parts = listConvertedParts(taskDir, file.filename).length;
+            if (parts === 0) throw new Error('splitting produced no output');
+          }
+          // the length of every part, so each can be named with its own start and end time
+          const partSeconds: number[] = [];
+          if (parts > 1) {
+            for (const name of listConvertedParts(taskDir, file.filename)) partSeconds.push((await probeDuration(path.join(taskDir, name))) ?? 0);
+          }
+          updateTaskFileConvertStatus(file.id, 'done', {
+            convertError: null,
+            convertParts: parts,
+            convertPartSeconds: parts > 1 && partSeconds.every((n) => n > 0) ? partSeconds : null,
+          });
+          updateTaskFileConvertProgress(file.id, 100);
+          log(taskId, `converted: "${file.filename}" (${parts} part${parts === 1 ? '' : 's'})`);
+          for (const name of listConvertedParts(taskDir, file.filename)) {
+            const mb = fs.statSync(path.join(taskDir, name)).size / 1048576;
+            if (mb > env.convertMaxPartMb) log(taskId, `  warning: ${name} is ${mb.toFixed(1)} MB, over the ${env.convertMaxPartMb} MB limit`);
+          }
+        } catch (err: any) {
+          active.activeConvertProcess = undefined;
+          const message = err?.message || 'Conversion failed';
+
+          if (active.cancelRequested) {
+            updateTaskFileConvertStatus(file.id, 'pending', { convertError: null });
+            log(taskId, `cancelled mid-conversion: "${file.filename}"`);
+            return;
+          }
+
+          // Deliberately doesn't touch the task's completed/failed counters
+          // — those track the download itself, which already succeeded.
+          // ffmpeg missing on the server (ENOENT) ends up here too, with a
+          // clear message rather than crashing the whole task.
+          updateTaskFileConvertStatus(file.id, 'failed', { convertError: message });
+          log(taskId, `conversion failed: "${file.filename}" — ${message}`);
+        }
+  };
+
+  const convertLoop = async (): Promise<void> => {
+    for (;;) {
+      if (active.cancelRequested) return;
+      const next = convertQueue.shift();
+      if (!next) {
+        if (downloadsDone) return;
+        await new Promise<void>((resolve) => {
+          converterWaiting = resolve;
+        });
+        continue;
+      }
+      await convertOne(next);
+    }
+  };
+
+  // downloaded earlier (a resume): only the conversion is outstanding
+  for (const file of outstanding) if (file.status === 'done') convertQueue.push(file);
+  const converter = convertLoop();
+
   try {
     for (const file of outstanding) {
+      if (file.status === 'done') continue;
       if (active.cancelRequested) {
         log(taskId, 'cancelled — stopping before next file');
         break;
       }
 
       const destPath = path.join(taskDir, sanitizeFilename(file.filename));
-      let downloadSucceeded = file.status === 'done';
+      let downloadSucceeded = false;
 
-      if (!downloadSucceeded) {
+      {
         updateTaskFileStatus(file.id, 'downloading', { etaSeconds: null });
         log(taskId, `downloading "${file.filename}" (channel ${file.channelName})`);
 
@@ -198,81 +312,18 @@ export async function runDownloadTask(taskId: number, conn: DeviceConn): Promise
         }
       }
 
-      // Conversion only ever runs against a successfully downloaded file —
-      // a download failure this round means there's nothing on disk yet to
-      // convert, so skip straight to the next file.
+      // Conversion runs in parallel (see convertLoop below): this file is queued for it and the next one starts
+      // downloading right away. A failed download leaves nothing to convert.
       if (!downloadSucceeded || active.cancelRequested) continue;
-
-      updateTaskFileConvertStatus(file.id, 'converting', { convertError: null });
-      updateTaskFileConvertProgress(file.id, null);
-      // Parts left by an earlier, interrupted conversion (and the single file of the pre-splitting format) would be
-      // mixed up with the new ones.
-      for (const old of listConvertedParts(taskDir, file.filename)) fs.rmSync(path.join(taskDir, old), { force: true });
-      fs.rmSync(path.join(taskDir, convertedFilename(file.filename)), { force: true });
-      log(taskId, `converting "${file.filename}" (scale 1280x720, crf 26)`);
-
-      let lastConvertReported = 0;
-      const onConvertProgress = (p: ConvertProgress) => {
-        const now = Date.now();
-        if (now - lastConvertReported < 1000) return;
-        lastConvertReported = now;
-        const rounded = p.percent !== null ? Math.round(p.percent) : null;
-        updateTaskFileConvertProgress(file.id, rounded);
-        log(taskId, `  converting "${file.filename}": ${rounded !== null ? `${rounded}%` : `${Math.round((p.elapsedSeconds ?? 0))}s elapsed`}`);
-      };
-
-      try {
-        const fullPath = path.join(taskDir, convertedFilename(file.filename));
-        await convertVideo(destPath, fullPath, onConvertProgress, {
-          onProcessStart: (proc) => {
-            active.activeConvertProcess = proc;
-          },
-        });
-        active.activeConvertProcess = undefined;
-
-        // One file when it fits; otherwise the fewest equal parts that each stay under the limit (stream copy: the
-        // quality of the conversion above is untouched).
-        const maxBytes = env.convertMaxPartMb * 1024 * 1024;
-        const fullBytes = fs.statSync(fullPath).size;
-        const wanted = partsNeeded(fullBytes, maxBytes);
-        let parts = 1;
-        if (wanted === 1) {
-          fs.renameSync(fullPath, path.join(taskDir, convertedPartFilename(file.filename, 1)));
-        } else {
-          const duration = await probeDuration(fullPath);
-          if (!duration) throw new Error('could not read the converted video length to split it');
-          log(taskId, `splitting "${file.filename}" (${Math.round(fullBytes / 1048576)} MB) into ${wanted} parts`);
-          await splitVideo(fullPath, taskDir, convertedPartPattern(file.filename), duration, wanted);
-          fs.rmSync(fullPath, { force: true });
-          parts = listConvertedParts(taskDir, file.filename).length;
-          if (parts === 0) throw new Error('splitting produced no output');
-        }
-        updateTaskFileConvertStatus(file.id, 'done', { convertError: null, convertParts: parts });
-        updateTaskFileConvertProgress(file.id, 100);
-        log(taskId, `converted: "${file.filename}" (${parts} part${parts === 1 ? '' : 's'})`);
-        for (const name of listConvertedParts(taskDir, file.filename)) {
-          const mb = fs.statSync(path.join(taskDir, name)).size / 1048576;
-          if (mb > env.convertMaxPartMb) log(taskId, `  warning: ${name} is ${mb.toFixed(1)} MB, over the ${env.convertMaxPartMb} MB limit`);
-        }
-      } catch (err: any) {
-        active.activeConvertProcess = undefined;
-        const message = err?.message || 'Conversion failed';
-
-        if (active.cancelRequested) {
-          updateTaskFileConvertStatus(file.id, 'pending', { convertError: null });
-          log(taskId, `cancelled mid-conversion: "${file.filename}"`);
-          break;
-        }
-
-        // Deliberately doesn't touch the task's completed/failed counters
-        // — those track the download itself, which already succeeded.
-        // ffmpeg missing on the server (ENOENT) ends up here too, with a
-        // clear message rather than crashing the whole task.
-        updateTaskFileConvertStatus(file.id, 'failed', { convertError: message });
-        log(taskId, `conversion failed: "${file.filename}" — ${message}`);
-      }
+      convertQueue.push(file);
+      wakeConverter();
     }
+    downloadsDone = true;
+    wakeConverter();
+    await converter;
   } finally {
+    downloadsDone = true;
+    wakeConverter();
     activeTasks.delete(taskId);
   }
 

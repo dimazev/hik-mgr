@@ -28,6 +28,8 @@ services:
       HIK_PASSWORD: ${HIK_PASSWORD:-}
       # Biggest size (MB) of one part of a converted video (see .env.example).
       CONVERT_MAX_PART_MB: ${CONVERT_MAX_PART_MB:-100}
+      # Time zone for names of files from older tasks (they hold UTC times), e.g. Asia/Jerusalem. Empty = server zone.
+      DISPLAY_TZ: ${DISPLAY_TZ:-}
       # Fewest parts a converted video is cut into.
       CONVERT_MIN_PARTS: ${CONVERT_MIN_PARTS:-2}
     volumes:

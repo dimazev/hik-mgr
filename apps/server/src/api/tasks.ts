@@ -179,7 +179,7 @@ router.get(
     }
 
     // the name the user gets: camera label, day, start and end time of this part (the file on disk keeps its own safe name)
-    const downloadName = `${recordingName({ label: file.channelName, startTime: file.startTime, endTime: file.endTime, partSeconds: file.convertPartSeconds, parts: file.convertParts ?? 1, part })}.mp4`;
+    const downloadName = `${recordingName({ label: file.channelName, startTime: file.startTime, endTime: file.endTime, partSeconds: file.convertPartSeconds, parts: file.convertParts ?? 1, part, timeZone: env.displayTimeZone })}.mp4`;
     res.download(convertedPath, downloadName);
   })
 );

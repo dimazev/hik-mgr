@@ -4,9 +4,32 @@
  * No year. The times are the device's own wall-clock times, used exactly as written - no timezone conversion.
  */
 
-/** The wall-clock time written in a device timestamp, as milliseconds in a timezone-free (UTC) frame. */
-function wallClockMs(iso: string | null | undefined): number | null {
+const ZONE_SUFFIX = /(Z|[+-]\d{2}:?\d{2})$/i;
+
+/**
+ * The wall-clock time of a timestamp, as milliseconds in a timezone-free (UTC) frame.
+ * - With a zone (the device sends UTC: "...13:00:05Z") it is a real instant, shown in `timeZone` - the browser's own
+ *   zone when none is given, so a recording made at 15:00 local reads 15:00 and not 13:00.
+ * - Without a zone ("2026-08-13T15:00:05") it is already local wall-clock time and is used exactly as written.
+ */
+function wallClockMs(iso: string | null | undefined, timeZone?: string): number | null {
   if (!iso) return null;
+  if (ZONE_SUFFIX.test(iso)) {
+    const instant = Date.parse(iso);
+    if (Number.isNaN(instant)) return null;
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timeZone || undefined,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    }).formatToParts(new Date(instant));
+    const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+    return Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
+  }
   const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/.exec(iso);
   if (!m) return null;
   return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6] ?? 0));
@@ -31,11 +54,12 @@ export function partRange(
   endTime: string | null | undefined,
   partSeconds: number[] | null | undefined,
   parts: number,
-  part: number
+  part: number,
+  timeZone?: string
 ): { startMs: number; endMs: number | null } | null {
-  const start = wallClockMs(startTime);
+  const start = wallClockMs(startTime, timeZone);
   if (start === null) return null;
-  const end = wallClockMs(endTime);
+  const end = wallClockMs(endTime, timeZone);
   if (parts <= 1) return { startMs: start, endMs: end };
   // each part's real length when it was measured; otherwise the recording cut into equal parts
   const lengths =
@@ -59,8 +83,8 @@ export function partTimeText(range: { startMs: number; endMs: number | null }): 
 }
 
 /** Month/day and time text for tables: "08/13 13:00" - no year. */
-export function dayTimeText(iso: string | null | undefined): string {
-  const ms = wallClockMs(iso);
+export function dayTimeText(iso: string | null | undefined, timeZone?: string): string {
+  const ms = wallClockMs(iso, timeZone);
   return ms === null ? (iso ?? '—') : `${mmdd(ms, '/')} ${hhmm(ms, ':')}`;
 }
 
@@ -72,9 +96,11 @@ export function recordingName(opts: {
   partSeconds?: number[] | null;
   parts?: number;
   part?: number;
+  /** zone to show a UTC timestamp in (default: the runtime's own) */
+  timeZone?: string;
 }): string {
   const label = safeLabel(opts.label);
-  const range = partRange(opts.startTime, opts.endTime, opts.partSeconds, opts.parts ?? 1, opts.part ?? 1);
+  const range = partRange(opts.startTime, opts.endTime, opts.partSeconds, opts.parts ?? 1, opts.part ?? 1, opts.timeZone);
   if (!range) return opts.parts && opts.parts > 1 ? `${label}_part${opts.part ?? 1}` : label;
   const day = mmdd(range.startMs, '-');
   if (range.endMs === null) return `${label}_${day}_${hhmm(range.startMs, '-')}`;
@@ -82,4 +108,15 @@ export function recordingName(opts: {
   return day === endDay
     ? `${label}_${day}_${hhmm(range.startMs, '-')}_${hhmm(range.endMs, '-')}`
     : `${label}_${day}_${hhmm(range.startMs, '-')}_${endDay}_${hhmm(range.endMs, '-')}`;
+}
+
+/**
+ * A device timestamp as local wall-clock text without a zone ("2026-08-13T15:00:05") in `timeZone` (default: the
+ * runtime's own). The browser stores this in the task, so names and lists stay correct whatever zone the server runs in.
+ */
+export function localWallClock(iso: string | null | undefined, timeZone?: string): string | null {
+  const ms = wallClockMs(iso, timeZone);
+  if (ms === null) return iso ?? null;
+  const d = new Date(ms);
+  return `${d.getUTCFullYear()}-${two(d.getUTCMonth() + 1)}-${two(d.getUTCDate())}T${two(d.getUTCHours())}:${two(d.getUTCMinutes())}:${two(d.getUTCSeconds())}`;
 }

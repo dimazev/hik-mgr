@@ -3,9 +3,8 @@ import fs from 'node:fs';
 import type { Readable } from 'node:stream';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { downloadRecording, type DeviceConn, type DownloadProgress } from './hik/isapi';
-import { convertVideo, type ConvertProgress } from './videoConvert';
-import { sanitizeFilename, convertedFilename, convertedPartPattern, listConvertedParts } from './fileNaming';
-import { segmentSeconds } from './videoConvert';
+import { convertVideo, partsNeeded, probeDuration, splitVideo, type ConvertProgress } from './videoConvert';
+import { sanitizeFilename, convertedFilename, convertedPartFilename, convertedPartPattern, listConvertedParts } from './fileNaming';
 import {
   getDownloadTask,
   updateTaskStatus,
@@ -210,7 +209,7 @@ export async function runDownloadTask(taskId: number, conn: DeviceConn): Promise
       // mixed up with the new ones.
       for (const old of listConvertedParts(taskDir, file.filename)) fs.rmSync(path.join(taskDir, old), { force: true });
       fs.rmSync(path.join(taskDir, convertedFilename(file.filename)), { force: true });
-      log(taskId, `converting "${file.filename}" (720p, crf 26, parts of ${segmentSeconds()}s)`);
+      log(taskId, `converting "${file.filename}" (scale 1280x720, crf 26)`);
 
       let lastConvertReported = 0;
       const onConvertProgress = (p: ConvertProgress) => {
@@ -223,22 +222,37 @@ export async function runDownloadTask(taskId: number, conn: DeviceConn): Promise
       };
 
       try {
-        await convertVideo(destPath, taskDir, convertedPartPattern(file.filename), onConvertProgress, {
+        const fullPath = path.join(taskDir, convertedFilename(file.filename));
+        await convertVideo(destPath, fullPath, onConvertProgress, {
           onProcessStart: (proc) => {
             active.activeConvertProcess = proc;
           },
         });
         active.activeConvertProcess = undefined;
-        const parts = listConvertedParts(taskDir, file.filename).length;
-        if (parts === 0) throw new Error('ffmpeg produced no output');
+
+        // One file when it fits; otherwise the fewest equal parts that each stay under the limit (stream copy: the
+        // quality of the conversion above is untouched).
+        const maxBytes = env.convertMaxPartMb * 1024 * 1024;
+        const fullBytes = fs.statSync(fullPath).size;
+        const wanted = partsNeeded(fullBytes, maxBytes);
+        let parts = 1;
+        if (wanted === 1) {
+          fs.renameSync(fullPath, path.join(taskDir, convertedPartFilename(file.filename, 1)));
+        } else {
+          const duration = await probeDuration(fullPath);
+          if (!duration) throw new Error('could not read the converted video length to split it');
+          log(taskId, `splitting "${file.filename}" (${Math.round(fullBytes / 1048576)} MB) into ${wanted} parts`);
+          await splitVideo(fullPath, taskDir, convertedPartPattern(file.filename), duration, wanted);
+          fs.rmSync(fullPath, { force: true });
+          parts = listConvertedParts(taskDir, file.filename).length;
+          if (parts === 0) throw new Error('splitting produced no output');
+        }
         updateTaskFileConvertStatus(file.id, 'done', { convertError: null, convertParts: parts });
         updateTaskFileConvertProgress(file.id, 100);
         log(taskId, `converted: "${file.filename}" (${parts} part${parts === 1 ? '' : 's'})`);
         for (const name of listConvertedParts(taskDir, file.filename)) {
-          const mb = fs.statSync(path.join(taskDir, name)).size / (1024 * 1024);
-          if (mb > env.whatsappVideoLimitMb) {
-            log(taskId, `  warning: ${name} is ${mb.toFixed(1)} MB - over WhatsApp's ${env.whatsappVideoLimitMb} MB video limit; lower CONVERT_SEGMENT_SECONDS`);
-          }
+          const mb = fs.statSync(path.join(taskDir, name)).size / 1048576;
+          if (mb > env.convertMaxPartMb) log(taskId, `  warning: ${name} is ${mb.toFixed(1)} MB, over the ${env.convertMaxPartMb} MB limit`);
         }
       } catch (err: any) {
         active.activeConvertProcess = undefined;

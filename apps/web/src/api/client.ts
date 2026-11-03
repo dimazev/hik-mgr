@@ -84,7 +84,17 @@ export const api = {
   // Only valid once a file's conversion subtask is 'done' — streams the
   // ffmpeg-converted copy as a real browser download (the raw downloaded
   // file itself stays server-side).
-  convertedFileDownloadUrl: (taskId: number, fileId: number) => `/api/tasks/${taskId}/files/${fileId}/download`,
+  // `part` (1-based) picks one of the time parts a converted video is cut into.
+  convertedFileDownloadUrl: (taskId: number, fileId: number, part?: number) =>
+    `/api/tasks/${taskId}/files/${fileId}/download${part ? `?part=${part}` : ''}`,
+  // Deletes the task and everything it downloaded / converted.
+  deleteTask: (taskId: number) => request<{ ok: true; freedBytes: number }>(`/api/tasks/${taskId}`, { method: 'DELETE' }),
+  // Deletes every finished task not updated in the last `olderThanDays` days (0 = all finished), with their files.
+  cleanupTasks: (olderThanDays: number) =>
+    request<{ deleted: number; freedBytes: number }>('/api/tasks/cleanup', {
+      method: 'POST',
+      body: JSON.stringify({ olderThanDays }),
+    }),
   snapshotUrl: (id: number, track?: number) => {
     const qs = new URLSearchParams({ t: String(Date.now()) });
     if (track) qs.set('track', String(track));

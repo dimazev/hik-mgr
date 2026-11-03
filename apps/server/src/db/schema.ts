@@ -107,6 +107,8 @@ export const downloadTaskFiles = sqliteTable('download_task_files', {
     .default('pending'),
   convertProgress: integer('convert_progress'),
   convertError: text('convert_error'),
+  // How many time parts the converted video was cut into (null = converted before splitting existed: one file).
+  convertParts: integer('convert_parts'),
 });
 
 export type DownloadTaskFileRow = typeof downloadTaskFiles.$inferSelect;

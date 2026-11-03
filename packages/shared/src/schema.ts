@@ -155,6 +155,8 @@ export interface DownloadTaskFile extends DownloadTaskFileInput {
   /** 0–100, updated live while convertStatus is 'converting'; null otherwise or if ffmpeg's output couldn't be parsed. */
   convertProgress: number | null;
   convertError: string | null;
+  /** Time parts the converted video was cut into (each small enough for WhatsApp); null = one file, converted before splitting existed. */
+  convertParts: number | null;
 }
 
 export interface DownloadTask {

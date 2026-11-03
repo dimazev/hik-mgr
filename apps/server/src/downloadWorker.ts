@@ -4,7 +4,8 @@ import type { Readable } from 'node:stream';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { downloadRecording, type DeviceConn, type DownloadProgress } from './hik/isapi';
 import { convertVideo, type ConvertProgress } from './videoConvert';
-import { sanitizeFilename, convertedFilename } from './fileNaming';
+import { sanitizeFilename, convertedFilename, convertedPartPattern, listConvertedParts } from './fileNaming';
+import { segmentSeconds } from './videoConvert';
 import {
   getDownloadTask,
   updateTaskStatus,
@@ -205,8 +206,11 @@ export async function runDownloadTask(taskId: number, conn: DeviceConn): Promise
 
       updateTaskFileConvertStatus(file.id, 'converting', { convertError: null });
       updateTaskFileConvertProgress(file.id, null);
-      const convertedPath = path.join(taskDir, convertedFilename(file.filename));
-      log(taskId, `converting "${file.filename}" (scale 1280x720, crf 26)`);
+      // Parts left by an earlier, interrupted conversion (and the single file of the pre-splitting format) would be
+      // mixed up with the new ones.
+      for (const old of listConvertedParts(taskDir, file.filename)) fs.rmSync(path.join(taskDir, old), { force: true });
+      fs.rmSync(path.join(taskDir, convertedFilename(file.filename)), { force: true });
+      log(taskId, `converting "${file.filename}" (720p, crf 26, parts of ${segmentSeconds()}s)`);
 
       let lastConvertReported = 0;
       const onConvertProgress = (p: ConvertProgress) => {
@@ -219,15 +223,23 @@ export async function runDownloadTask(taskId: number, conn: DeviceConn): Promise
       };
 
       try {
-        await convertVideo(destPath, convertedPath, onConvertProgress, {
+        await convertVideo(destPath, taskDir, convertedPartPattern(file.filename), onConvertProgress, {
           onProcessStart: (proc) => {
             active.activeConvertProcess = proc;
           },
         });
         active.activeConvertProcess = undefined;
-        updateTaskFileConvertStatus(file.id, 'done', { convertError: null });
+        const parts = listConvertedParts(taskDir, file.filename).length;
+        if (parts === 0) throw new Error('ffmpeg produced no output');
+        updateTaskFileConvertStatus(file.id, 'done', { convertError: null, convertParts: parts });
         updateTaskFileConvertProgress(file.id, 100);
-        log(taskId, `converted: "${file.filename}"`);
+        log(taskId, `converted: "${file.filename}" (${parts} part${parts === 1 ? '' : 's'})`);
+        for (const name of listConvertedParts(taskDir, file.filename)) {
+          const mb = fs.statSync(path.join(taskDir, name)).size / (1024 * 1024);
+          if (mb > env.whatsappVideoLimitMb) {
+            log(taskId, `  warning: ${name} is ${mb.toFixed(1)} MB - over WhatsApp's ${env.whatsappVideoLimitMb} MB video limit; lower CONVERT_SEGMENT_SECONDS`);
+          }
+        }
       } catch (err: any) {
         active.activeConvertProcess = undefined;
         const message = err?.message || 'Conversion failed';

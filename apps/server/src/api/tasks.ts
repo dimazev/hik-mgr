@@ -7,7 +7,8 @@ import { devices } from '../db/schema';
 import { decryptSecret } from '../crypto';
 import { getDownloadTask, listDownloadTasks, updateTaskStatus } from '../db/downloadTasks';
 import { runDownloadTask, requestCancelTask, isTaskActive } from '../downloadWorker';
-import { convertedFilename } from '../fileNaming';
+import { convertedFilename, convertedPartFilename } from '../fileNaming';
+import { deleteFinishedTasksOlderThan, deleteTaskAndFiles } from '../taskCleanup';
 import { env } from '../env';
 import type { DeviceConn } from '../hik/isapi';
 
@@ -150,7 +151,18 @@ router.get(
     }
 
     const taskDir = path.join(env.downloadsDir, `task-${taskId}`);
-    const outName = convertedFilename(file.filename);
+    // Videos converted before splitting existed (convertParts = null) are one file; newer ones are numbered parts.
+    let outName: string;
+    if (file.convertParts == null) {
+      outName = convertedFilename(file.filename);
+    } else {
+      const part = req.query.part === undefined ? 1 : Number(req.query.part);
+      if (!Number.isInteger(part) || part < 1 || part > file.convertParts) {
+        res.status(400).json({ error: `part must be 1..${file.convertParts}` });
+        return;
+      }
+      outName = convertedPartFilename(file.filename, part);
+    }
     const convertedPath = path.join(taskDir, outName);
     if (!fs.existsSync(convertedPath)) {
       res.status(404).json({ error: 'Converted file is missing on disk' });
@@ -158,6 +170,39 @@ router.get(
     }
 
     res.download(convertedPath, outName);
+  })
+);
+
+// Deletes one task together with everything it downloaded and converted. A task that is still working must be
+// cancelled first.
+router.delete(
+  '/:taskId',
+  asyncHandler(async (req, res) => {
+    const taskId = Number(req.params.taskId);
+    const task = getDownloadTask(taskId);
+    if (!task) {
+      res.status(404).json({ error: 'Task not found' });
+      return;
+    }
+    if (task.status === 'running' || task.status === 'pending' || isTaskActive(taskId)) {
+      res.status(400).json({ error: 'Task is still in progress - cancel it first' });
+      return;
+    }
+    const freedBytes = deleteTaskAndFiles(taskId);
+    res.json({ ok: true, freedBytes });
+  })
+);
+
+// Deletes every finished task (and its files) that has not changed in the last olderThanDays days; 0 = all finished ones.
+router.post(
+  '/cleanup',
+  asyncHandler(async (req, res) => {
+    const olderThanDays = Number(req.body?.olderThanDays);
+    if (!Number.isInteger(olderThanDays) || olderThanDays < 0 || olderThanDays > 3650) {
+      res.status(400).json({ error: 'olderThanDays must be a whole number of days, 0 or more' });
+      return;
+    }
+    res.json(deleteFinishedTasksOlderThan(olderThanDays, isTaskActive));
   })
 );
 

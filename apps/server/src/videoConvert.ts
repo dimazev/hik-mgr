@@ -1,5 +1,7 @@
 import os from 'node:os';
+import path from 'node:path';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { env } from './env';
 
 export interface ConvertProgress {
   percent: number | null;
@@ -14,35 +16,36 @@ function toSeconds(h: string, m: string, s: string): number {
   return Number(h) * 3600 + Number(m) * 60 + Number(s);
 }
 
+/** Length (seconds) of each part of a converted video. */
+export function segmentSeconds(): number {
+  return env.convertSegmentSeconds;
+}
+
 /**
- * Runs the fixed "good quality, smaller file" transcode against one
- * downloaded recording: scale to 720p, libx264 crf 26, strip audio,
- * faststart for web playback. Originally requested as:
- *   ffmpeg -i <in> -vf "scale=1280:720" -c:v libx264 -crf 26 -preset slow
- *          -an -movflags +faststart <out>
- * `-preset slow` is libx264's slowest, most CPU-intensive software-encode
- * setting — noticeable server-wide CPU usage while a task's conversion
- * subtask is running traced back to this. Switched to `-preset fast`:
- * meaningfully lighter on CPU, same `-crf 26` (so still constant-quality,
- * just a somewhat larger file for the same quality — a fine tradeoff for
- * a background batch job, unlike a one-off encode where `slow` earns its
- * cost). The spawned process is also niced down (see os.setPriority below)
- * so a conversion doesn't compete with the rest of the app for CPU even
- * while it's happening.
+ * Runs the fixed "good quality, smaller file" transcode against one downloaded recording and cuts the result into
+ * time parts, so each part is small enough to send over WhatsApp: scale to 720p, libx264 crf 26, yuv420p (what
+ * phones play), no audio, faststart. The quality is the same as before the split existed - the video is only cut
+ * every segmentSeconds(), with a forced keyframe at each cut so every part plays on its own.
  *
- * Progress is parsed best-effort from ffmpeg's stderr (`Duration:` once at
- * the start, `time=` throughout) the same way downloadRecording reports
- * download progress — if a future ffmpeg version changes that output
- * format, progress just stays null while the conversion still completes
- * and resolves/rejects normally.
+ * Writes <outputDir>/<outputPattern> where the pattern has a %03d part number (1-based), e.g. front_converted_001.mp4.
+ *
+ * `-preset fast` rather than `slow`: much lighter on CPU for a background batch job, at the cost of a slightly
+ * larger file at the same quality. The spawned process is also niced down (see os.setPriority below) so a
+ * conversion doesn't compete with the rest of the app for CPU.
+ *
+ * Progress is parsed best-effort from ffmpeg's stderr (`Duration:` once at the start, `time=` throughout) the
+ * same way downloadRecording reports download progress - if a future ffmpeg version changes that output format,
+ * progress just stays null while the conversion still completes and resolves/rejects normally.
  */
 export function convertVideo(
   inputPath: string,
-  outputPath: string,
+  outputDir: string,
+  outputPattern: string,
   onProgress?: (p: ConvertProgress) => void,
   opts: { onProcessStart?: (proc: ChildProcessWithoutNullStreams) => void } = {}
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    const seconds = segmentSeconds();
     const args = [
       '-y',
       '-i',
@@ -51,14 +54,28 @@ export function convertVideo(
       'scale=1280:720',
       '-c:v',
       'libx264',
+      '-pix_fmt',
+      'yuv420p',
       '-crf',
       '26',
       '-preset',
       'fast',
       '-an',
-      '-movflags',
-      '+faststart',
-      outputPath,
+      '-force_key_frames',
+      `expr:gte(t,n_forced*${seconds})`,
+      '-f',
+      'segment',
+      '-segment_time',
+      String(seconds),
+      '-segment_start_number',
+      '1',
+      '-reset_timestamps',
+      '1',
+      '-segment_format',
+      'mp4',
+      '-segment_format_options',
+      'movflags=+faststart',
+      path.join(outputDir, outputPattern),
     ];
 
     const proc = spawn('ffmpeg', args);

@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import type {
   DownloadTask,
   DownloadTaskDetail,
@@ -56,6 +56,7 @@ function toPublicFile(row: DownloadTaskFileRow) {
     convertStatus: row.convertStatus as DownloadTaskFileConvertStatus,
     convertProgress: row.convertProgress,
     convertError: row.convertError,
+    convertParts: row.convertParts,
   };
 }
 
@@ -168,7 +169,7 @@ export function updateTaskFileProgress(
 export function updateTaskFileConvertStatus(
   fileId: number,
   convertStatus: DownloadTaskFileConvertStatus,
-  extra: { convertError?: string | null } = {}
+  extra: { convertError?: string | null; convertParts?: number | null } = {}
 ): void {
   db.update(downloadTaskFiles)
     .set({ convertStatus, ...extra })
@@ -225,4 +226,21 @@ export function markStaleRunningTasksInterrupted(): number {
     }
   }
   return stale.length;
+}
+
+/** Removes a task and its file rows. The files on disk are the caller's job (see taskCleanup.ts). */
+export function deleteDownloadTaskRows(taskId: number): void {
+  db.transaction((tx) => {
+    tx.delete(downloadTaskFiles).where(eq(downloadTaskFiles.taskId, taskId)).run();
+    tx.delete(downloadTasks).where(eq(downloadTasks.id, taskId)).run();
+  });
+}
+
+/** Ids of the tasks that are not pending / running (so safe to delete), with their last-update time. */
+export function listFinishedTaskIds(): { id: number; updatedAt: string }[] {
+  return db
+    .select({ id: downloadTasks.id, updatedAt: downloadTasks.updatedAt })
+    .from(downloadTasks)
+    .where(inArray(downloadTasks.status, ['completed', 'failed', 'cancelled', 'interrupted']))
+    .all();
 }

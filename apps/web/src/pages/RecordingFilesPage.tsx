@@ -15,6 +15,7 @@ import TableContainer from '@mui/material/TableContainer';
 import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
 import Button from '@mui/material/Button';
+import Checkbox from '@mui/material/Checkbox';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -79,6 +80,8 @@ export default function RecordingFilesPage() {
     : undefined;
 
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // Indexes (in the list below) the user un-ticked - everything starts selected, so a new search needs no reset.
+  const [deselected, setDeselected] = useState<Set<number>>(new Set());
 
   const q = useQuery({
     queryKey: ['recordings-files', deviceId, start, end, channelsParam],
@@ -87,7 +90,18 @@ export default function RecordingFilesPage() {
   });
 
   const files = q.data?.files ?? [];
-  const channelNames = new Set(files.map((f) => f.deviceChannelName ?? t('common.unknownChannel')));
+  const selectedIdx = files.map((_, i) => i).filter((i) => !deselected.has(i));
+  const selectedFiles = selectedIdx.map((i) => files[i]);
+  const channelNames = new Set(selectedFiles.map((f) => f.deviceChannelName ?? t('common.unknownChannel')));
+
+  const toggleFile = (i: number) =>
+    setDeselected((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  const toggleAll = () => setDeselected(selectedIdx.length === files.length ? new Set(files.map((_, i) => i)) : new Set());
 
   const createTaskMutation = useMutation({
     mutationFn: (payload: DownloadTaskFileInput[]) => api.createDownloadTask(deviceId, payload),
@@ -96,7 +110,9 @@ export default function RecordingFilesPage() {
 
   const handleConfirmDownload = () => {
     setConfirmOpen(false);
-    const payload: DownloadTaskFileInput[] = files.map((f, i) => ({
+    const payload: DownloadTaskFileInput[] = selectedIdx.map((i) => {
+      const f = files[i];
+      return {
       channelId: Math.floor(Number(f.trackID) / 100),
       channelName: f.deviceChannelName || t('common.unknownChannel'),
       playbackURI: f.playbackURI,
@@ -104,7 +120,8 @@ export default function RecordingFilesPage() {
       startTime: f.startTime ?? null,
       endTime: f.endTime ?? null,
       sizeBytes: f.sizeBytes ?? null,
-    }));
+      };
+    });
     createTaskMutation.mutate(payload);
   };
 
@@ -142,6 +159,16 @@ export default function RecordingFilesPage() {
             <Table size="small">
               <TableHead>
                 <TableRow>
+                  <TableCell padding="checkbox">
+                    <Checkbox
+                      size="small"
+                      checked={files.length > 0 && selectedIdx.length === files.length}
+                      indeterminate={selectedIdx.length > 0 && selectedIdx.length < files.length}
+                      onChange={toggleAll}
+                      disabled={files.length === 0}
+                      inputProps={{ 'aria-label': t('recordingFiles.selectAllAria') }}
+                    />
+                  </TableCell>
                   <TableCell>{t('recordings.colChannel')}</TableCell>
                   <TableCell>{t('recordingFiles.colFileName')}</TableCell>
                   <TableCell>{t('recordings.start')}</TableCell>
@@ -151,7 +178,15 @@ export default function RecordingFilesPage() {
               </TableHead>
               <TableBody>
                 {files.map((f, i) => (
-                  <TableRow key={`${f.playbackURI}-${i}`}>
+                  <TableRow key={`${f.playbackURI}-${i}`} hover selected={!deselected.has(i)}>
+                    <TableCell padding="checkbox">
+                      <Checkbox
+                        size="small"
+                        checked={!deselected.has(i)}
+                        onChange={() => toggleFile(i)}
+                        inputProps={{ 'aria-label': t('recordingFiles.selectFileAria') }}
+                      />
+                    </TableCell>
                     <TableCell>{f.deviceChannelName ?? '—'}</TableCell>
                     <TableCell>{friendlyFileName(f.deviceChannelName, f.startTime, i)}</TableCell>
                     <TableCell>{f.startTime ?? '—'}</TableCell>
@@ -161,7 +196,7 @@ export default function RecordingFilesPage() {
                 ))}
                 {files.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5}>
+                    <TableCell colSpan={6}>
                       <Typography color="text.secondary">{t('recordingFiles.noneInRange')}</Typography>
                     </TableCell>
                   </TableRow>
@@ -171,17 +206,20 @@ export default function RecordingFilesPage() {
           </TableContainer>
 
           {files.length > 0 && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', pt: 1 }}>
+            <Stack alignItems="center" spacing={0.5} sx={{ pt: 1 }}>
+              <Typography variant="body2" color="text.secondary">
+                {t('recordingFiles.selectedOf', { selected: selectedIdx.length, total: files.length })}
+              </Typography>
               <Button
                 variant="contained"
                 size="large"
                 startIcon={<FileDownloadIcon />}
                 onClick={() => setConfirmOpen(true)}
-                disabled={createTaskMutation.isPending}
+                disabled={createTaskMutation.isPending || selectedIdx.length === 0}
               >
-                {createTaskMutation.isPending ? t('recordingFiles.starting') : t('recordingFiles.downloadCount', { count: files.length })}
+                {createTaskMutation.isPending ? t('recordingFiles.starting') : t('recordingFiles.downloadCount', { count: selectedIdx.length })}
               </Button>
-            </Box>
+            </Stack>
           )}
 
           {createTaskMutation.isError && <Alert severity="error">{(createTaskMutation.error as Error).message}</Alert>}
@@ -190,13 +228,13 @@ export default function RecordingFilesPage() {
 
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
         <DialogTitle>
-          {t(files.length === 1 ? 'recordingFiles.confirmTitleOne' : 'recordingFiles.confirmTitleOther', { count: files.length })}
+          {t(selectedIdx.length === 1 ? 'recordingFiles.confirmTitleOne' : 'recordingFiles.confirmTitleOther', { count: selectedIdx.length })}
         </DialogTitle>
         <DialogContent>
           <DialogContentText>
             {t('recordingFiles.confirmBody', {
-              count: files.length,
-              fileWord: t(files.length === 1 ? 'common.file' : 'common.files'),
+              count: selectedIdx.length,
+              fileWord: t(selectedIdx.length === 1 ? 'common.file' : 'common.files'),
               channelCount: channelNames.size,
               channelWord: t(channelNames.size === 1 ? 'common.channel' : 'common.channels'),
             })}

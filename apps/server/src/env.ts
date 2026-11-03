@@ -77,6 +77,11 @@ export const env = {
   appSecret: required('APP_SECRET', 'dev-only-insecure-secret-change-me'),
   dbPath: resolveDbPath(),
   downloadsDir: resolveDownloadsDir(),
+  // A converted video is cut into parts of this many seconds, so each part is small enough to send over WhatsApp
+  // (16 MB for a video). The picture quality is not touched - only the length of each part.
+  convertSegmentSeconds: Math.max(10, Number(process.env.CONVERT_SEGMENT_SECONDS || 60)),
+  // A part bigger than this (MB) is reported in the server log, since WhatsApp will not take it as a video.
+  whatsappVideoLimitMb: 16,
   hikDefault: hikDefault(),
   // Single-admin login gating the whole app (see auth.ts / api/auth.ts).
   // Same insecure-default-with-a-warning pattern as APP_SECRET, so a

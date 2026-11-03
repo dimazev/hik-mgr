@@ -15,12 +15,21 @@ import Alert from '@mui/material/Alert';
 import Chip from '@mui/material/Chip';
 import IconButton from '@mui/material/IconButton';
 import Button from '@mui/material/Button';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogContentText from '@mui/material/DialogContentText';
+import DialogActions from '@mui/material/DialogActions';
+import MenuItem from '@mui/material/MenuItem';
+import TextField from '@mui/material/TextField';
 import Collapse from '@mui/material/Collapse';
 import LinearProgress from '@mui/material/LinearProgress';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import CancelIcon from '@mui/icons-material/Cancel';
 import ReplayIcon from '@mui/icons-material/Replay';
+import DeleteIcon from '@mui/icons-material/Delete';
+import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import type {
   DownloadTask,
@@ -154,19 +163,25 @@ function ConvertSubtask({ taskId, file }: { taskId: number; file: DownloadTaskFi
     <Stack spacing={0.5}>
       <Stack direction="row" spacing={0.5} alignItems="center">
         <Chip size="small" label={t(CONVERT_STATUS_KEY[file.convertStatus])} color={CONVERT_STATUS_COLOR[file.convertStatus]} />
-        {file.convertStatus === 'done' && (
-          <Button
-            size="small"
-            component="a"
-            href={api.convertedFileDownloadUrl(taskId, file.id)}
-            target="_blank"
-            rel="noreferrer"
-            startIcon={<FileDownloadIcon fontSize="small" />}
-          >
-            {t('recordingFiles.download')}
-          </Button>
-        )}
       </Stack>
+      {file.convertStatus === 'done' && (
+        // A converted video is cut into time parts (each small enough to send over WhatsApp); older tasks have one file.
+        <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap">
+          {Array.from({ length: file.convertParts ?? 1 }, (_, i) => i + 1).map((part) => (
+            <Button
+              key={part}
+              size="small"
+              component="a"
+              href={api.convertedFileDownloadUrl(taskId, file.id, file.convertParts == null ? undefined : part)}
+              target="_blank"
+              rel="noreferrer"
+              startIcon={<FileDownloadIcon fontSize="small" />}
+            >
+              {file.convertParts == null || file.convertParts === 1 ? t('recordingFiles.download') : t('tasks.part', { n: part })}
+            </Button>
+          ))}
+        </Stack>
+      )}
       {file.convertStatus === 'converting' && (
         <Box sx={{ minWidth: 120 }}>
           <LinearProgress
@@ -239,6 +254,15 @@ function TaskRow({ task }: { task: DownloadTask }) {
     },
   });
 
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const deleteMutation = useMutation({
+    mutationFn: () => api.deleteTask(task.id),
+    onSuccess: () => {
+      setConfirmDelete(false);
+      queryClient.invalidateQueries({ queryKey: ['download-tasks'] });
+    },
+  });
+
   const progressDone = task.completedFiles + task.failedFiles;
   const progressPct = task.totalFiles > 0 ? (progressDone / task.totalFiles) * 100 : 0;
 
@@ -288,6 +312,11 @@ function TaskRow({ task }: { task: DownloadTask }) {
                 {t('tasks.resume')}
               </Button>
             )}
+            {!isActive(task.status) && (
+              <Button size="small" color="error" startIcon={<DeleteIcon fontSize="small" />} onClick={() => setConfirmDelete(true)}>
+                {t('tasks.delete')}
+              </Button>
+            )}
             <IconButton
               size="small"
               aria-label={expanded ? t('tasks.collapseAria') : t('tasks.expandAria')}
@@ -298,6 +327,23 @@ function TaskRow({ task }: { task: DownloadTask }) {
           </Stack>
         </TableCell>
       </TableRow>
+      <Dialog open={confirmDelete} onClose={() => setConfirmDelete(false)}>
+        <DialogTitle>{t('tasks.deleteTitle')}</DialogTitle>
+        <DialogContent>
+          <DialogContentText>{t('tasks.deleteBody')}</DialogContentText>
+          {deleteMutation.isError && (
+            <Alert severity="error" sx={{ mt: 1 }}>
+              {(deleteMutation.error as Error).message}
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDelete(false)}>{t('devices.cancel')}</Button>
+          <Button color="error" variant="contained" onClick={() => deleteMutation.mutate()} disabled={deleteMutation.isPending}>
+            {t('tasks.delete')}
+          </Button>
+        </DialogActions>
+      </Dialog>
       <TableRow>
         <TableCell colSpan={6} sx={{ py: 0, borderBottom: expanded ? undefined : 0 }}>
           <Collapse in={expanded} timeout="auto" unmountOnExit>
@@ -366,9 +412,57 @@ export default function TasksPage() {
 
   const tasks = q.data ?? [];
 
+  const queryClient = useQueryClient();
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [olderThanDays, setOlderThanDays] = useState(7);
+  const cleanupMutation = useMutation({
+    mutationFn: () => api.cleanupTasks(olderThanDays),
+    onSuccess: () => {
+      setCleanupOpen(false);
+      queryClient.invalidateQueries({ queryKey: ['download-tasks'] });
+    },
+  });
+
   return (
     <Stack spacing={2}>
-      <Typography variant="h5">{t('tasks.title')}</Typography>
+      <Stack direction="row" justifyContent="space-between" alignItems="center">
+        <Typography variant="h5">{t('tasks.title')}</Typography>
+        <Button startIcon={<DeleteSweepIcon />} onClick={() => setCleanupOpen(true)} disabled={tasks.length === 0}>
+          {t('tasks.deleteOld')}
+        </Button>
+      </Stack>
+
+      {cleanupMutation.isSuccess && (
+        <Alert severity="success" onClose={() => cleanupMutation.reset()}>
+          {t('tasks.deletedResult', { count: cleanupMutation.data.deleted, size: formatBytes(cleanupMutation.data.freedBytes) })}
+        </Alert>
+      )}
+
+      <Dialog open={cleanupOpen} onClose={() => setCleanupOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle>{t('tasks.deleteOldTitle')}</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 2 }}>{t('tasks.deleteOldBody')}</DialogContentText>
+          <TextField select fullWidth size="small" label={t('tasks.olderThan')} value={olderThanDays} onChange={(e) => setOlderThanDays(Number(e.target.value))}>
+            <MenuItem value={0}>{t('tasks.optAllFinished')}</MenuItem>
+            {[1, 7, 30].map((days) => (
+              <MenuItem key={days} value={days}>
+                {t('tasks.optDays', { days })}
+              </MenuItem>
+            ))}
+          </TextField>
+          {cleanupMutation.isError && (
+            <Alert severity="error" sx={{ mt: 1 }}>
+              {(cleanupMutation.error as Error).message}
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCleanupOpen(false)}>{t('devices.cancel')}</Button>
+          <Button color="error" variant="contained" onClick={() => cleanupMutation.mutate()} disabled={cleanupMutation.isPending}>
+            {t('tasks.delete')}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {q.isLoading && (
         <Stack direction="row" spacing={1} alignItems="center">

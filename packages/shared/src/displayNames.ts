@@ -110,13 +110,33 @@ export function recordingName(opts: {
     : `${label}_${day}_${hhmm(range.startMs, '-')}_${endDay}_${hhmm(range.endMs, '-')}`;
 }
 
+/** "20261031T221437Z" (the form in a playbackURI) as an ISO UTC timestamp. */
+function compactToIso(compact: string): string | null {
+  const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/i.exec(compact);
+  return m ? `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}Z` : null;
+}
+
 /**
- * A device timestamp as local wall-clock text without a zone ("2026-08-13T15:00:05") in `timeZone` (default: the
- * runtime's own). The browser stores this in the task, so names and lists stay correct whatever zone the server runs in.
+ * The real start and end of a recording file. A Hikvision playbackURI carries them
+ * (".../tracks/101?starttime=20261031T221437Z&endtime=20261031T224544Z&name=..."): those are the file's own times,
+ * while the search result's timeSpan can follow the range that was searched. Falls back to the search result when the
+ * URI has no times. Always ISO UTC.
  */
-export function localWallClock(iso: string | null | undefined, timeZone?: string): string | null {
-  const ms = wallClockMs(iso, timeZone);
-  if (ms === null) return iso ?? null;
-  const d = new Date(ms);
-  return `${d.getUTCFullYear()}-${two(d.getUTCMonth() + 1)}-${two(d.getUTCDate())}T${two(d.getUTCHours())}:${two(d.getUTCMinutes())}:${two(d.getUTCSeconds())}`;
+export function fileTimes(
+  playbackURI: string | null | undefined,
+  searchStart: string | null | undefined,
+  searchEnd: string | null | undefined
+): { startTime: string | null; endTime: string | null } {
+  const start = /[?&]starttime=([0-9TZ]+)/i.exec(playbackURI ?? '')?.[1];
+  const end = /[?&]endtime=([0-9TZ]+)/i.exec(playbackURI ?? '')?.[1];
+  return {
+    startTime: (start && compactToIso(start)) || searchStart || null,
+    endTime: (end && compactToIso(end)) || searchEnd || null,
+  };
+}
+
+/** `startTime` plus `seconds`, as an ISO UTC timestamp. */
+export function addSeconds(startTime: string, seconds: number): string | null {
+  const t = Date.parse(startTime);
+  return Number.isNaN(t) ? null : new Date(t + Math.round(seconds * 1000)).toISOString().replace(/\.\d{3}Z$/, 'Z');
 }

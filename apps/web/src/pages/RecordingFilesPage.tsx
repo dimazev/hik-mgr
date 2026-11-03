@@ -22,7 +22,7 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogActions from '@mui/material/DialogActions';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
-import { dayTimeText, localWallClock, recordingName, type DownloadTaskFileInput } from '@hik-mgr/shared';
+import { dayTimeText, fileTimes, recordingName, type DownloadTaskFileInput } from '@hik-mgr/shared';
 import { api } from '../api/client';
 import { useLocale } from '../i18n/LocaleContext';
 
@@ -104,7 +104,8 @@ export default function RecordingFilesPage() {
   const toggleAll = () => setDeselected(selectedIdx.length === files.length ? new Set(files.map((_, i) => i)) : new Set());
 
   const createTaskMutation = useMutation({
-    mutationFn: (payload: DownloadTaskFileInput[]) => api.createDownloadTask(deviceId, payload),
+    // the browser's time zone: the device reports UTC, the names and lists show the user's own time
+    mutationFn: (payload: DownloadTaskFileInput[]) => api.createDownloadTask(deviceId, payload, Intl.DateTimeFormat().resolvedOptions().timeZone),
     onSuccess: () => navigate('/tasks'),
   });
 
@@ -117,9 +118,8 @@ export default function RecordingFilesPage() {
       channelName: f.deviceChannelName || t('common.unknownChannel'),
       playbackURI: f.playbackURI,
       filename: friendlyFileName(f.deviceChannelName, f.startTime, i),
-      // the device reports UTC; the task keeps the user's local time, which is what its names and lists show
-      startTime: localWallClock(f.startTime),
-      endTime: localWallClock(f.endTime),
+      startTime: f.startTime ?? null,
+      endTime: f.endTime ?? null,
       sizeBytes: f.sizeBytes ?? null,
       };
     });
@@ -189,9 +189,9 @@ export default function RecordingFilesPage() {
                       />
                     </TableCell>
                     <TableCell>{f.deviceChannelName ?? '—'}</TableCell>
-                    <TableCell>{`${recordingName({ label: f.deviceChannelName, startTime: f.startTime, endTime: f.endTime })}.mp4`}</TableCell>
-                    <TableCell>{dayTimeText(f.startTime)}</TableCell>
-                    <TableCell>{dayTimeText(f.endTime)}</TableCell>
+                    <TableCell>{`${recordingName({ label: f.deviceChannelName, ...fileTimes(f.playbackURI, f.startTime, f.endTime) })}.mp4`}</TableCell>
+                    <TableCell>{dayTimeText(fileTimes(f.playbackURI, f.startTime, f.endTime).startTime)}</TableCell>
+                    <TableCell>{dayTimeText(fileTimes(f.playbackURI, f.startTime, f.endTime).endTime)}</TableCell>
                     <TableCell>{f.sizeBytes ?? '—'}</TableCell>
                   </TableRow>
                 ))}

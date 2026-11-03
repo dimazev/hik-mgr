@@ -150,7 +150,7 @@ function FileProgress({ file }: { file: DownloadTaskFile }) {
  * the converted copy straight from the server, unlike the raw downloaded
  * file which stays server-side) once it's 'done'.
  */
-function ConvertSubtask({ taskId, file, taskActive }: { taskId: number; file: DownloadTaskFile; taskActive: boolean }) {
+function ConvertSubtask({ taskId, file, taskActive, timeZone }: { taskId: number; file: DownloadTaskFile; taskActive: boolean; timeZone: string | null }) {
   const { t } = useLocale();
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -196,7 +196,7 @@ function ConvertSubtask({ taskId, file, taskActive }: { taskId: number; file: Do
               {(() => {
                 if (file.convertParts == null || file.convertParts === 1) return t('recordingFiles.download');
                 // each part is labelled with the time it covers
-                const range = partRange(file.startTime, file.endTime, file.convertPartSeconds, file.convertParts, part);
+                const range = partRange(file.startTime, file.endTime, file.convertPartSeconds, file.convertParts, part, timeZone ?? undefined);
                 return range ? partTimeText(range) : t('tasks.part', { n: part });
               })()}
             </Button>
@@ -440,7 +440,7 @@ function TaskRow({ task }: { task: DownloadTask }) {
                     {detailQuery.data.files.map((f) => (
                       <TableRow key={f.id}>
                         <TableCell>{f.channelName}</TableCell>
-                        <TableCell>{`${recordingName({ label: f.channelName, startTime: f.startTime, endTime: f.endTime })}.mp4`}</TableCell>
+                        <TableCell>{`${recordingName({ label: f.channelName, startTime: f.startTime, endTime: f.endTime, timeZone: task.timeZone ?? undefined })}.mp4`}</TableCell>
                         <TableCell>
                           <Chip size="small" label={t(FILE_STATUS_KEY[f.status])} color={FILE_STATUS_COLOR[f.status]} />
                           {f.error && (
@@ -453,7 +453,7 @@ function TaskRow({ task }: { task: DownloadTask }) {
                           <FileProgress file={f} />
                         </TableCell>
                         <TableCell>
-                          <ConvertSubtask taskId={task.id} file={f} taskActive={isActive(task.status)} />
+                          <ConvertSubtask taskId={task.id} file={f} taskActive={isActive(task.status)} timeZone={task.timeZone} />
                         </TableCell>
                       </TableRow>
                     ))}

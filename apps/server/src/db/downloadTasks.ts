@@ -1,4 +1,5 @@
 import { eq, inArray } from 'drizzle-orm';
+import { fileTimes } from '@hik-mgr/shared';
 import type {
   DownloadTask,
   DownloadTaskDetail,
@@ -15,6 +16,7 @@ function toPublicTask(row: DownloadTaskRow, deviceName: string, channelNames: st
     id: row.id,
     deviceId: row.deviceId,
     deviceName,
+    timeZone: row.timeZone,
     status: row.status as DownloadTaskStatus,
     totalFiles: row.totalFiles,
     completedFiles: row.completedFiles,
@@ -78,9 +80,9 @@ function toPublicFile(row: DownloadTaskFileRow) {
  * downloadWorker.runDownloadTask afterward — this function only persists
  * the task, it doesn't start downloading anything.
  */
-export function createDownloadTask(deviceId: number, files: DownloadTaskFileInput[]): number {
+export function createDownloadTask(deviceId: number, files: DownloadTaskFileInput[], timeZone?: string): number {
   return db.transaction((tx) => {
-    const result = tx.insert(downloadTasks).values({ deviceId, totalFiles: files.length }).run();
+    const result = tx.insert(downloadTasks).values({ deviceId, totalFiles: files.length, timeZone: timeZone ?? null }).run();
     const taskId = Number(result.lastInsertRowid);
     for (const f of files) {
       tx.insert(downloadTaskFiles)
@@ -90,8 +92,9 @@ export function createDownloadTask(deviceId: number, files: DownloadTaskFileInpu
           channelName: f.channelName,
           playbackURI: f.playbackURI,
           filename: f.filename,
-          startTime: f.startTime ?? null,
-          endTime: f.endTime ?? null,
+          // the file's own times (from its playbackURI), not the range that was searched
+          startTime: fileTimes(f.playbackURI, f.startTime, f.endTime).startTime,
+          endTime: fileTimes(f.playbackURI, f.startTime, f.endTime).endTime,
           sizeBytes: f.sizeBytes ?? null,
         })
         .run();
@@ -263,4 +266,9 @@ export function listFinishedTaskIds(): { id: number; updatedAt: string }[] {
     .from(downloadTasks)
     .where(inArray(downloadTasks.status, ['completed', 'failed', 'cancelled', 'interrupted']))
     .all();
+}
+
+/** Corrects a file's start / end once the real values are known (e.g. its length measured after the download). */
+export function updateTaskFileTimes(fileId: number, times: { startTime?: string | null; endTime?: string | null }): void {
+  db.update(downloadTaskFiles).set(times).where(eq(downloadTaskFiles.id, fileId)).run();
 }

@@ -55,6 +55,7 @@ sqlite.exec(`
     total_files INTEGER NOT NULL DEFAULT 0,
     completed_files INTEGER NOT NULL DEFAULT 0,
     failed_files INTEGER NOT NULL DEFAULT 0,
+    time_zone TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
@@ -96,6 +97,7 @@ for (const alterStatement of [
   `ALTER TABLE download_task_files ADD COLUMN eta_seconds INTEGER`,
   `ALTER TABLE download_task_files ADD COLUMN convert_parts INTEGER`,
   `ALTER TABLE download_task_files ADD COLUMN convert_part_seconds TEXT`,
+  `ALTER TABLE download_tasks ADD COLUMN time_zone TEXT`,
 ]) {
   try {
     sqlite.exec(alterStatement);

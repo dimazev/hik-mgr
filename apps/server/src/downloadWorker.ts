@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import type { Readable } from 'node:stream';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { downloadRecording, type DeviceConn, type DownloadProgress } from './hik/isapi';
+import { addSeconds } from '@hik-mgr/shared';
 import { convertVideo, partsNeeded, probeDuration, splitVideo, type ConvertProgress } from './videoConvert';
 import { sanitizeFilename, convertedFilename, convertedPartFilename, convertedPartPattern, listConvertedParts } from './fileNaming';
 import {
@@ -13,6 +14,7 @@ import {
   updateTaskFileConvertStatus,
   updateTaskFileConvertProgress,
   incrementTaskCounts,
+  updateTaskFileTimes,
 } from './db/downloadTasks';
 import { env } from './env';
 
@@ -291,6 +293,16 @@ export async function runDownloadTask(taskId: number, conn: DeviceConn): Promise
             error: null,
           });
           incrementTaskCounts(taskId, { completed: 1 });
+          // The end time is the start plus the length of the file that was actually downloaded - not what the search
+          // reported. (The start is the one in the file's own playbackURI, stored when the task was created.)
+          const downloadedSeconds = await probeDuration(destPath);
+          if (downloadedSeconds && downloadedSeconds > 0 && file.startTime) {
+            const realEnd = addSeconds(file.startTime, downloadedSeconds);
+            if (realEnd) {
+              updateTaskFileTimes(file.id, { endTime: realEnd });
+              log(taskId, `  "${file.filename}": ${file.startTime} -> ${realEnd} (${Math.round(downloadedSeconds)}s in the file)`);
+            }
+          }
           log(taskId, `downloaded: "${file.filename}" (${Math.round(downloadedBytes / 1024)} KB)`);
           downloadSucceeded = true;
         } catch (err: any) {

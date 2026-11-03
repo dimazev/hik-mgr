@@ -254,7 +254,6 @@ router.post(
       password: decryptSecret(deviceRow.passwordEnc),
     };
 
-
     const taskDir = path.join(env.downloadsDir, `task-${taskId}`);
     for (const file of targets) {
       for (const part of listConvertedParts(taskDir, file.filename)) fs.rmSync(path.join(taskDir, part), { force: true });

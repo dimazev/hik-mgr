@@ -1,8 +1,15 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import path from 'node:path';
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    // The web app imports real functions (not only types) from the shared package. Its compiled output is CommonJS,
+    // whose re-exports (`export * from`) the bundler cannot see through, so the build failed with "X is not exported".
+    // Reading the TypeScript source instead gives plain ES modules.
+    alias: { '@hik-mgr/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts') },
+  },
   server: {
     proxy: {
       '/api': {

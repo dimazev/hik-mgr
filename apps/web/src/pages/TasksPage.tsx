@@ -150,8 +150,18 @@ function FileProgress({ file }: { file: DownloadTaskFile }) {
  * the converted copy straight from the server, unlike the raw downloaded
  * file which stays server-side) once it's 'done'.
  */
-function ConvertSubtask({ taskId, file }: { taskId: number; file: DownloadTaskFile }) {
+function ConvertSubtask({ taskId, file, taskActive }: { taskId: number; file: DownloadTaskFile; taskActive: boolean }) {
   const { t } = useLocale();
+  const queryClient = useQueryClient();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const reconvert = useMutation({
+    mutationFn: () => api.reconvertTask(taskId, file.id),
+    onSuccess: () => {
+      setConfirmOpen(false);
+      queryClient.invalidateQueries({ queryKey: ['download-tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['download-task', taskId] });
+    },
+  });
   if (file.status !== 'done') {
     return (
       <Typography variant="caption" color="text.secondary">
@@ -164,6 +174,11 @@ function ConvertSubtask({ taskId, file }: { taskId: number; file: DownloadTaskFi
     <Stack spacing={0.5}>
       <Stack direction="row" spacing={0.5} alignItems="center">
         <Chip size="small" label={t(CONVERT_STATUS_KEY[file.convertStatus])} color={CONVERT_STATUS_COLOR[file.convertStatus]} />
+        {(file.convertStatus === 'done' || file.convertStatus === 'failed') && !taskActive && (
+          <Button size="small" startIcon={<ReplayIcon fontSize="small" />} onClick={() => setConfirmOpen(true)}>
+            {t('tasks.reconvert')}
+          </Button>
+        )}
       </Stack>
       {file.convertStatus === 'done' && (
         // A converted video is cut into time parts (each small enough to send over WhatsApp); older tasks have one file.
@@ -206,6 +221,23 @@ function ConvertSubtask({ taskId, file }: { taskId: number; file: DownloadTaskFi
           {file.convertError}
         </Typography>
       )}
+      <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
+        <DialogTitle>{t('tasks.reconvertTitle')}</DialogTitle>
+        <DialogContent>
+          <DialogContentText>{t('tasks.reconvertBody')}</DialogContentText>
+          {reconvert.isError && (
+            <Alert severity="error" sx={{ mt: 1 }}>
+              {(reconvert.error as Error).message}
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmOpen(false)}>{t('devices.cancel')}</Button>
+          <Button variant="contained" onClick={() => reconvert.mutate()} disabled={reconvert.isPending}>
+            {t('tasks.reconvert')}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }
@@ -261,6 +293,15 @@ function TaskRow({ task }: { task: DownloadTask }) {
   });
 
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmReconvert, setConfirmReconvert] = useState(false);
+  const reconvertAllMutation = useMutation({
+    mutationFn: () => api.reconvertTask(task.id),
+    onSuccess: () => {
+      setConfirmReconvert(false);
+      queryClient.invalidateQueries({ queryKey: ['download-tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['download-task', task.id] });
+    },
+  });
   const deleteMutation = useMutation({
     mutationFn: () => api.deleteTask(task.id),
     onSuccess: () => {
@@ -318,6 +359,11 @@ function TaskRow({ task }: { task: DownloadTask }) {
                 {t('tasks.resume')}
               </Button>
             )}
+            {!isActive(task.status) && task.completedFiles > 0 && (
+              <Button size="small" startIcon={<ReplayIcon fontSize="small" />} onClick={() => setConfirmReconvert(true)}>
+                {t('tasks.reconvertAll')}
+              </Button>
+            )}
             {!isActive(task.status) && (
               <Button size="small" color="error" startIcon={<DeleteIcon fontSize="small" />} onClick={() => setConfirmDelete(true)}>
                 {t('tasks.delete')}
@@ -333,6 +379,23 @@ function TaskRow({ task }: { task: DownloadTask }) {
           </Stack>
         </TableCell>
       </TableRow>
+      <Dialog open={confirmReconvert} onClose={() => setConfirmReconvert(false)}>
+        <DialogTitle>{t('tasks.reconvertTitle')}</DialogTitle>
+        <DialogContent>
+          <DialogContentText>{t('tasks.reconvertAllBody')}</DialogContentText>
+          {reconvertAllMutation.isError && (
+            <Alert severity="error" sx={{ mt: 1 }}>
+              {(reconvertAllMutation.error as Error).message}
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmReconvert(false)}>{t('devices.cancel')}</Button>
+          <Button variant="contained" onClick={() => reconvertAllMutation.mutate()} disabled={reconvertAllMutation.isPending}>
+            {t('tasks.reconvertAll')}
+          </Button>
+        </DialogActions>
+      </Dialog>
       <Dialog open={confirmDelete} onClose={() => setConfirmDelete(false)}>
         <DialogTitle>{t('tasks.deleteTitle')}</DialogTitle>
         <DialogContent>
@@ -390,7 +453,7 @@ function TaskRow({ task }: { task: DownloadTask }) {
                           <FileProgress file={f} />
                         </TableCell>
                         <TableCell>
-                          <ConvertSubtask taskId={task.id} file={f} />
+                          <ConvertSubtask taskId={task.id} file={f} taskActive={isActive(task.status)} />
                         </TableCell>
                       </TableRow>
                     ))}

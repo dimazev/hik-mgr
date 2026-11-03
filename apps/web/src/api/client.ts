@@ -87,6 +87,9 @@ export const api = {
   // `part` (1-based) picks one of the time parts a converted video is cut into.
   convertedFileDownloadUrl: (taskId: number, fileId: number, part?: number) =>
     `/api/tasks/${taskId}/files/${fileId}/download${part ? `?part=${part}` : ''}`,
+  // Deletes the converted files of one file (or of the whole task without fileId) and converts again from the original.
+  reconvertTask: (taskId: number, fileId?: number) =>
+    request<{ ok: true }>(`/api/tasks/${taskId}/reconvert`, { method: 'POST', body: JSON.stringify(fileId === undefined ? {} : { fileId }) }),
   // Deletes the task and everything it downloaded / converted.
   deleteTask: (taskId: number) => request<{ ok: true; freedBytes: number }>(`/api/tasks/${taskId}`, { method: 'DELETE' }),
   // Deletes every finished task not updated in the last `olderThanDays` days (0 = all finished), with their files.

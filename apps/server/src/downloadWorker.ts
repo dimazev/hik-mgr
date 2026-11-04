@@ -322,6 +322,10 @@ export async function runDownloadTask(taskId: number, conn: DeviceConn): Promise
               log(taskId, `  "${file.filename}": ${startTime} -> ${realEnd} (${Math.round(downloadedSeconds)}s in the file; start from ${startFrom})`);
             }
           }
+          if (downloadedSeconds && file.startTime && file.endTime) {
+            const reported = (Date.parse(file.endTime) - Date.parse(file.startTime)) / 1000;
+            if (downloadedSeconds > reported + 3) log(taskId, `  warning: "${file.filename}" is ${Math.round(downloadedSeconds)}s long but was listed as ${Math.round(reported)}s - the start shown may be clipped`);
+          }
           logDownloaded({ taskId, fileId: file.id, playbackURI: file.playbackURI, downloadFileName: downloadName, responseHeaders, startFrom, startTime, endTime, seconds: downloadedSeconds ?? null, bytes: downloadedBytes });
           log(taskId, `downloaded: "${file.filename}" (${Math.round(downloadedBytes / 1024)} KB)`);
           downloadSucceeded = true;

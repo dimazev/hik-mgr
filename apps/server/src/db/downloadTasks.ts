@@ -92,8 +92,8 @@ export function createDownloadTask(deviceId: number, files: DownloadTaskFileInpu
           playbackURI: f.playbackURI,
           filename: f.filename,
           // the file's own times (from its playbackURI), not the range that was searched
-          startTime: fileTimes(f.playbackURI, f.startTime, f.endTime).startTime,
-          endTime: fileTimes(f.playbackURI, f.startTime, f.endTime).endTime,
+          startTime: fileTimes(f.playbackURI, f.startTime, f.endTime, { startTime: f.realStartTime, endTime: f.realEndTime }).startTime,
+          endTime: fileTimes(f.playbackURI, f.startTime, f.endTime, { startTime: f.realStartTime, endTime: f.realEndTime }).endTime,
           sizeBytes: f.sizeBytes ?? null,
         })
         .run();

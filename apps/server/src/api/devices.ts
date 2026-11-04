@@ -9,6 +9,7 @@ import { getLabelsForDevice, setChannelLabel } from '../db/channelLabels';
 import { getRecordingHistory, saveRecordingHistory } from '../db/recordingHistory';
 import { createDownloadTask, updateTaskStatus } from '../db/downloadTasks';
 import { logSearch } from '../cameraLog';
+import { refineEdges } from '../edgeLookup';
 import { runDownloadTask } from '../downloadWorker';
 import {
   getDeviceStatus,
@@ -294,7 +295,13 @@ router.get(
     const maxResults = req.query.max ? Number(req.query.max) : undefined;
     // Every file the camera returns is written to the camera log (see cameraLog.ts) and returned as is: the window searched is
     // exactly the one asked for, nothing is widened and nothing is filtered out.
-    const record = <T extends { playbackURI?: string; startTime?: string; endTime?: string }>(files: T[], channel: string): T[] => {
+    const record = async <T extends { playbackURI?: string; startTime?: string; endTime?: string; realStartTime?: string; realEndTime?: string }>(
+      files: T[],
+      channel: string,
+      trackID: number
+    ): Promise<T[]> => {
+      // the first / last recording of a search comes back clipped to the searched window: ask the camera for their real times
+      await refineEdges({ conn, deviceId, channel, trackID, files, askedStart: startTime, askedEnd: endTime });
       logSearch({ deviceId, channel, asked: { start: startTime, end: endTime }, files });
       // the camera's untouched item is for the log only - not sent on to the browser
       return files.map((f) => {
@@ -318,7 +325,7 @@ router.get(
 
     if (track) {
       const result = await searchRecordings(conn, { trackID: track, startTime, endTime, maxResults });
-      const files = record(result.files, `track ${track}`);
+      const files = await record(result.files, `track ${track}`, track);
       res.json({ ...result, files, numOfMatches: files.length });
       return;
     }
@@ -346,7 +353,7 @@ router.get(
 
     if (channelList.length === 0) {
       const result = await searchRecordings(conn, { trackID: 101, startTime, endTime, maxResults });
-      const files = record(result.files, 'track 101');
+      const files = await record(result.files, 'track 101', 101);
       res.json({ ...result, numOfMatches: files.length, files: files.map((f) => ({ ...f, deviceChannelName: null })) });
       return;
     }
@@ -355,7 +362,7 @@ router.get(
     for (const ch of channelList) {
       const trackID = ch.id * 100 + 1;
       const result = await searchRecordings(conn, { trackID, startTime, endTime, maxResults });
-      const found = record(result.files, ch.name);
+      const found = await record(result.files, ch.name, trackID);
       merged.push(...found.map((f) => ({ ...f, deviceChannelName: ch.name })));
     }
     res.json({ numOfMatches: merged.length, files: merged });

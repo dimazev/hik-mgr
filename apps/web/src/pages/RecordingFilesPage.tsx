@@ -22,7 +22,7 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogActions from '@mui/material/DialogActions';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
-import { dayTimeText, deviceFileName, fileTimes, formatWallClock, recordingName, type DownloadTaskFileInput } from '@hik-mgr/shared';
+import { dayTimeText, deviceFileName, formatWallClock, recordingName, recordingTimes, type DownloadTaskFileInput } from '@hik-mgr/shared';
 import { api } from '../api/client';
 import { useLocale } from '../i18n/LocaleContext';
 
@@ -117,6 +117,8 @@ export default function RecordingFilesPage() {
       filename: friendlyFileName(f.deviceChannelName, f.startTime, i),
       startTime: f.startTime ?? null,
       endTime: f.endTime ?? null,
+      realStartTime: f.realStartTime ?? null,
+      realEndTime: f.realEndTime ?? null,
       sizeBytes: f.sizeBytes ?? null,
       };
     });
@@ -187,9 +189,9 @@ export default function RecordingFilesPage() {
                       />
                     </TableCell>
                     <TableCell>{f.deviceChannelName ?? '—'}</TableCell>
-                    <TableCell>{`${recordingName({ label: f.deviceChannelName, ...fileTimes(f.playbackURI, f.startTime, f.endTime) })}.mp4`}</TableCell>
-                    <TableCell>{dayTimeText(fileTimes(f.playbackURI, f.startTime, f.endTime).startTime)}</TableCell>
-                    <TableCell>{dayTimeText(fileTimes(f.playbackURI, f.startTime, f.endTime).endTime)}</TableCell>
+                    <TableCell>{`${recordingName({ label: f.deviceChannelName, ...recordingTimes(f) })}.mp4`}</TableCell>
+                    <TableCell>{dayTimeText(recordingTimes(f).startTime)}</TableCell>
+                    <TableCell>{dayTimeText(recordingTimes(f).endTime)}</TableCell>
                     <TableCell>{f.sizeBytes ?? '—'}</TableCell>
                     <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }} title={f.playbackURI}>
                       {deviceFileName(f.playbackURI) ?? '—'}

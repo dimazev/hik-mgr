@@ -144,7 +144,8 @@ export function namedTimes(name: string | null | undefined): string[] {
 export function fileTimes(
   playbackURI: string | null | undefined,
   searchStart: string | null | undefined,
-  searchEnd: string | null | undefined
+  searchEnd: string | null | undefined,
+  real?: { startTime?: string | null; endTime?: string | null }
 ): { startTime: string | null; endTime: string | null } {
   const start = /[?&]starttime=([0-9TZ]+)/i.exec(playbackURI ?? '')?.[1];
   const end = /[?&]endtime=([0-9TZ]+)/i.exec(playbackURI ?? '')?.[1];
@@ -152,7 +153,8 @@ export function fileTimes(
   const endTime = (end && compactToIso(end)) || searchEnd || null;
   const named = namedTimes(deviceFileName(playbackURI))[0];
   if (named && (!startTime || Date.parse(named) <= Date.parse(startTime))) startTime = named;
-  return { startTime, endTime };
+  // times the camera confirmed when asked again for an edge file win over everything it reported in the clipped search
+  return { startTime: real?.startTime || startTime, endTime: real?.endTime || endTime };
 }
 
 /** `startTime` plus `seconds`, as an ISO UTC timestamp. */
@@ -172,4 +174,15 @@ export function formatWallClock(iso: string | null | undefined, locale: string, 
     day: 'numeric',
     ...(withTime ? { hour: '2-digit', minute: '2-digit' } : {}),
   });
+}
+
+/** A search result's start / end: the confirmed real ones when there are, else the best reading of what the camera reported. */
+export function recordingTimes(f: {
+  playbackURI?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
+  realStartTime?: string | null;
+  realEndTime?: string | null;
+}): { startTime: string | null; endTime: string | null } {
+  return fileTimes(f.playbackURI, f.startTime, f.endTime, { startTime: f.realStartTime, endTime: f.realEndTime });
 }

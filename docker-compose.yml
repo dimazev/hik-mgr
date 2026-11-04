@@ -28,6 +28,8 @@ services:
       HIK_PASSWORD: ${HIK_PASSWORD:-}
       # Biggest size (MB) of one part of a converted video (see .env.example).
       CONVERT_MAX_PART_MB: ${CONVERT_MAX_PART_MB:-100}
+      # Minutes the extra edge-file lookup reaches back / forward (0 = off), see .env.example.
+      EDGE_LOOKUP_MINUTES: ${EDGE_LOOKUP_MINUTES:-180}
       # Fewest parts a converted video is cut into.
       CONVERT_MIN_PARTS: ${CONVERT_MIN_PARTS:-2}
     volumes:

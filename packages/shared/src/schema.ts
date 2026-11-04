@@ -58,6 +58,9 @@ export interface RecordingFile {
   contentType?: string;
   sizeBytes?: number;
   deviceChannelName?: string | null;
+  /** The recording's true start / end when the search clipped it to the searched window (see the server's edgeLookup.ts). */
+  realStartTime?: string;
+  realEndTime?: string;
 }
 
 export interface DeviceStatus {
@@ -126,6 +129,8 @@ export const downloadTaskFileInputSchema = z.object({
   startTime: z.string().nullable().optional(),
   endTime: z.string().nullable().optional(),
   sizeBytes: z.coerce.number().nullable().optional(),
+  realStartTime: z.string().nullable().optional(),
+  realEndTime: z.string().nullable().optional(),
 });
 export type DownloadTaskFileInput = z.infer<typeof downloadTaskFileInputSchema>;
 

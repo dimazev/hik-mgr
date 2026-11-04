@@ -55,6 +55,20 @@ export function logSearchExchange(opts: { trackID: number; position: number; req
   });
 }
 
+/** The extra question asked about the first / last recording of a search, and what the camera answered. */
+export function logEdgeLookup(opts: {
+  deviceId: number;
+  channel: string;
+  edge: 'start' | 'end';
+  cameraFileName: string | null;
+  reportedInSearch: string | undefined;
+  asked: { startTime: string; endTime: string };
+  found: { startTime?: string; endTime?: string; playbackURI?: string } | null;
+  result: string | undefined;
+}): void {
+  append({ event: 'edge-lookup', ...opts });
+}
+
 /** One search: what was asked (and sent to the camera as is) and EVERY file it returned. */
 export function logSearch(opts: {
   deviceId: number;
@@ -71,7 +85,9 @@ export function logSearch(opts: {
       cameraFileName: deviceFileName(file.playbackURI),
       playbackURI: file.playbackURI,
       reported: { startTime: file.startTime, endTime: file.endTime },
-      parsed: fileTimes(file.playbackURI, file.startTime, file.endTime),
+      parsed: fileTimes(file.playbackURI, file.startTime, file.endTime, { startTime: (file as { realStartTime?: string }).realStartTime, endTime: (file as { realEndTime?: string }).realEndTime }),
+      realStartTime: (file as { realStartTime?: string }).realStartTime,
+      realEndTime: (file as { realEndTime?: string }).realEndTime,
       sizeBytes: file.sizeBytes,
       trackID: file.trackID,
       contentType: file.contentType,

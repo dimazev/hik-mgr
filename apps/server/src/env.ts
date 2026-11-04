@@ -81,6 +81,10 @@ export const env = {
   // becomes 2 parts. The cut is a stream copy, so the picture quality is not touched.
   // Every converted video is cut into at least this many parts (default 2), however small - one file can still be too
   // big for WhatsApp to take as a video.
+  // For the first / last recording of a search the camera reports the SEARCHED window's edge instead of the recording's real
+  // start / end. The app asks the camera once more for just that edge file, starting this many minutes earlier / ending later,
+  // to read the real time. Must be longer than a single recording (yours: about 40 min). 0 = do not ask.
+  edgeLookupMinutes: Math.max(0, Number(process.env.EDGE_LOOKUP_MINUTES ?? 180)),
   convertMinParts: Math.max(1, Math.floor(Number(process.env.CONVERT_MIN_PARTS || 2))),
   convertMaxPartMb: Math.max(5, Number(process.env.CONVERT_MAX_PART_MB || 100)),
   hikDefault: hikDefault(),

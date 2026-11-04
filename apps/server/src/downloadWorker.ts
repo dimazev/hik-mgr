@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import type { Readable } from 'node:stream';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { downloadRecording, type DeviceConn, type DownloadProgress } from './hik/isapi';
-import { addSeconds } from '@hik-mgr/shared';
-import { logDownloaded } from './cameraLog';
+import { addSeconds, namedTimes } from '@hik-mgr/shared';
+import { dispositionFileName, logDownloaded } from './cameraLog';
 import { convertVideo, partsNeeded, probeDuration, splitVideo, type ConvertProgress } from './videoConvert';
 import { sanitizeFilename, convertedFilename, convertedPartFilename, convertedPartPattern, listConvertedParts } from './fileNaming';
 import {
@@ -267,7 +267,11 @@ export async function runDownloadTask(taskId: number, conn: DeviceConn): Promise
         };
 
         try {
+          let responseHeaders: Record<string, unknown> | undefined;
           await downloadRecording(conn, file.playbackURI, destPath, onProgress, {
+            onResponseHeaders: (headers) => {
+              responseHeaders = headers;
+            },
             onStreamStart: (stream) => {
               active.activeStream = stream;
             },
@@ -294,17 +298,31 @@ export async function runDownloadTask(taskId: number, conn: DeviceConn): Promise
             error: null,
           });
           incrementTaskCounts(taskId, { completed: 1 });
-          // The end time is the start plus the length of the file that was actually downloaded - not what the search
-          // reported. (The start is the one in the file's own playbackURI, stored when the task was created.)
+          // Start: a time written in the file name the download itself announced is the most direct evidence (the search result
+          // clips the first recording to the searched window); then the camera's name in the playback address, then the address's
+          // starttime, then the search result (already chosen when the task was created, see fileTimes). A named time is taken
+          // only when it is earlier than what is stored - a clipped start can only be later than the truth.
+          // End: that start plus the length of the file actually received.
+          const downloadName = dispositionFileName(responseHeaders);
+          const fromDownloadName = namedTimes(downloadName)[0];
+          let startFrom = 'stored (camera name / address / search result)';
+          let startTime = file.startTime ?? null;
+          if (fromDownloadName && (!startTime || Date.parse(fromDownloadName) < Date.parse(startTime))) {
+            startTime = fromDownloadName;
+            startFrom = 'download file name';
+            updateTaskFileTimes(file.id, { startTime });
+          }
           const downloadedSeconds = await probeDuration(destPath);
-          if (downloadedSeconds && downloadedSeconds > 0 && file.startTime) {
-            const realEnd = addSeconds(file.startTime, downloadedSeconds);
+          let endTime = file.endTime ?? null;
+          if (downloadedSeconds && downloadedSeconds > 0 && startTime) {
+            const realEnd = addSeconds(startTime, downloadedSeconds);
             if (realEnd) {
+              endTime = realEnd;
               updateTaskFileTimes(file.id, { endTime: realEnd });
-              log(taskId, `  "${file.filename}": ${file.startTime} -> ${realEnd} (${Math.round(downloadedSeconds)}s in the file)`);
+              log(taskId, `  "${file.filename}": ${startTime} -> ${realEnd} (${Math.round(downloadedSeconds)}s in the file; start from ${startFrom})`);
             }
           }
-          logDownloaded({ taskId, fileId: file.id, playbackURI: file.playbackURI, startTime: file.startTime ?? null, endTime: getDownloadTask(taskId)?.files.find((x) => x.id === file.id)?.endTime ?? file.endTime ?? null, seconds: downloadedSeconds ?? null, bytes: downloadedBytes });
+          logDownloaded({ taskId, fileId: file.id, playbackURI: file.playbackURI, downloadFileName: downloadName, responseHeaders, startFrom, startTime, endTime, seconds: downloadedSeconds ?? null, bytes: downloadedBytes });
           log(taskId, `downloaded: "${file.filename}" (${Math.round(downloadedBytes / 1024)} KB)`);
           downloadSucceeded = true;
         } catch (err: any) {

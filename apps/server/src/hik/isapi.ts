@@ -185,6 +185,8 @@ export async function downloadRecording(
     // full re-download. Callers can use this to log/surface that instead
     // of it looking like a resume that mysteriously restarted from 0.
     onResumeDecision?: (info: { attempted: boolean; honored: boolean; existingBytes: number }) => void;
+    // The camera's response headers, as soon as they arrive (its own file name is in Content-Disposition, when it sends one).
+    onResponseHeaders?: (headers: Record<string, unknown>) => void;
   } = {}
 ): Promise<string> {
   const resume = opts2.resume !== false;
@@ -214,6 +216,7 @@ export async function downloadRecording(
   const totalBytes = resolveTotalBytes(response.headers, startByte);
 
   opts2.onResumeDecision?.({ attempted: existingBytes > 0, honored: resumed, existingBytes });
+  opts2.onResponseHeaders?.(response.headers as Record<string, unknown>);
   opts2.onStreamStart?.(response.data);
 
   await new Promise<void>((resolve, reject) => {

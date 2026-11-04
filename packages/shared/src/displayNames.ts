@@ -107,15 +107,26 @@ export function deviceFileName(playbackURI: string | null | undefined): string |
 
 /**
  * Timestamps written inside a camera file name, in order: "ch01_20261103143400_20261103150500" -> 14:34:00, 15:05:00.
- * Only the full YYYYMMDDhhmmss form is read (optionally with a T, _ or - between date and time).
+ * Understood: 20261103143400, 20261103T143400, 20261103_143400, 2026-11-03_14-34-00, 2026.11.03 14:34 (seconds optional
+ * when the date and time are separated). A bare run of digits is read only in the full 14-digit form - shorter ones
+ * look too much like the camera's numeric file ids.
  */
-function namedTimes(name: string | null): string[] {
+export function namedTimes(name: string | null | undefined): string[] {
   if (!name) return [];
   const out: string[] = [];
+  const add = (y: string, mo: string, d: string, h: string, mi: string, s?: string) => {
+    if (Number(mo) < 1 || Number(mo) > 12 || Number(d) < 1 || Number(d) > 31 || Number(h) > 23 || Number(mi) > 59 || Number(s ?? 0) > 59) return;
+    out.push(`${y}-${mo}-${d}T${h}:${mi}:${s ?? '00'}Z`);
+  };
+  const seen = new Set<number>();
+  // 1) contiguous: 20261103143400 / 20261103T143400 / 20261103_143400
   for (const m of name.matchAll(/(20\d{2})(\d{2})(\d{2})[T_-]?(\d{2})(\d{2})(\d{2})/g)) {
-    const [, y, mo, d, h, mi, s] = m;
-    if (Number(mo) < 1 || Number(mo) > 12 || Number(d) < 1 || Number(d) > 31 || Number(h) > 23 || Number(mi) > 59 || Number(s) > 59) continue;
-    out.push(`${y}-${mo}-${d}T${h}:${mi}:${s}Z`);
+    seen.add(m.index ?? -1);
+    add(m[1], m[2], m[3], m[4], m[5], m[6]);
+  }
+  // 2) with separators: 2026-11-03_14-34-00, 2026.11.03 14:34
+  for (const m of name.matchAll(/(20\d{2})[-_.](\d{2})[-_.](\d{2})[T_ .-]+(\d{2})[-_.:](\d{2})(?:[-_.:](\d{2}))?/g)) {
+    if (!seen.has(m.index ?? -1)) add(m[1], m[2], m[3], m[4], m[5], m[6]);
   }
   return out;
 }

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { deviceFileName, fileTimes } from '@hik-mgr/shared';
+import { deviceFileName, fileTimes, namedTimes } from '@hik-mgr/shared';
 import { env } from './env';
 
 /**
@@ -59,15 +59,43 @@ export function logSearch(opts: {
   }
 }
 
-/** A file that was downloaded: the original name and address again, the times stored, the length actually received. */
+/** The file name a download response announces (Content-Disposition), if any. */
+export function dispositionFileName(headers: Record<string, unknown> | undefined): string | null {
+  const raw = String(headers?.['content-disposition'] ?? '');
+  const star = /filename\*=(?:UTF-8'')?([^;]+)/i.exec(raw)?.[1];
+  const plain = /filename="?([^";]+)"?/i.exec(raw)?.[1];
+  const name = star ?? plain;
+  if (!name) return null;
+  try {
+    return decodeURIComponent(name.trim());
+  } catch {
+    return name.trim();
+  }
+}
+
+/**
+ * A file that was downloaded: everything the camera told us about it and where the stored start came from, so a wrong time
+ * can be traced - the playback address, the name in it, the name the download itself announced, every time found in them.
+ */
 export function logDownloaded(opts: {
   taskId: number;
   fileId: number;
   playbackURI: string;
+  downloadFileName: string | null;
+  responseHeaders: Record<string, unknown> | undefined;
+  startFrom: string;
   startTime: string | null;
   endTime: string | null;
   seconds: number | null;
   bytes: number;
 }): void {
-  append({ event: 'downloaded', ...opts, cameraFileName: deviceFileName(opts.playbackURI) });
+  const { responseHeaders, ...rest } = opts;
+  append({
+    event: 'downloaded',
+    ...rest,
+    cameraFileName: deviceFileName(opts.playbackURI),
+    timesInCameraFileName: namedTimes(deviceFileName(opts.playbackURI)),
+    timesInDownloadFileName: namedTimes(opts.downloadFileName),
+    responseHeaders,
+  });
 }

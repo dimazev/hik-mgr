@@ -11,6 +11,7 @@
  * better-sqlite3 (used only by the DB layer, not this module).
  */
 
+import { logSearchExchange } from '../cameraLog';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import type { Readable } from 'node:stream';
@@ -98,6 +99,7 @@ async function searchRecordingsPage(
     data: body,
   });
 
+  logSearchExchange({ trackID, position, requestXml: body, responseXml: typeof response.data === 'string' ? response.data : String(response.data) });
   const parsed = xmlParser.parse(response.data);
   const result = parsed.CMSearchResult || {};
   const matches: any[] = result.matchList?.searchMatchItem || [];
@@ -113,6 +115,7 @@ async function searchRecordingsPage(
       playbackURI: item.mediaSegmentDescriptor?.playbackURI,
       contentType: item.mediaSegmentDescriptor?.contentType,
       sizeBytes: item.mediaSegmentDescriptor?.size,
+      raw: item,
     })),
   };
 }

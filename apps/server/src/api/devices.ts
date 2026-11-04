@@ -296,7 +296,11 @@ router.get(
     // exactly the one asked for, nothing is widened and nothing is filtered out.
     const record = <T extends { playbackURI?: string; startTime?: string; endTime?: string }>(files: T[], channel: string): T[] => {
       logSearch({ deviceId, channel, asked: { start: startTime, end: endTime }, files });
-      return files;
+      // the camera's untouched item is for the log only - not sent on to the browser
+      return files.map((f) => {
+        const { raw: _raw, ...rest } = f as T & { raw?: unknown };
+        return rest as T;
+      });
     };
     // Optional comma-separated list of channel ids to restrict the search
     // to (e.g. from the Recordings tab's channel picker) — lets a caller

@@ -33,6 +33,26 @@ export interface ReportedFile {
   playbackURI?: string;
   contentType?: unknown;
   sizeBytes?: unknown;
+  /** the match item exactly as the camera sent it (every field) */
+  raw?: unknown;
+}
+
+/**
+ * The raw exchange with the camera for one page of a search: the XML request we sent (the window as the camera received it) and
+ * the XML it answered, untouched. A reply bigger than 200 KB is cut and says so.
+ */
+export function logSearchExchange(opts: { trackID: number; position: number; requestXml: string; responseXml: string }): void {
+  const MAX = 200_000;
+  const cut = opts.responseXml.length > MAX;
+  append({
+    event: 'search-exchange',
+    trackID: opts.trackID,
+    position: opts.position,
+    requestXml: opts.requestXml,
+    responseXml: cut ? opts.responseXml.slice(0, MAX) : opts.responseXml,
+    responseCutAt: cut ? MAX : undefined,
+    responseLength: opts.responseXml.length,
+  });
 }
 
 /** One search: what was asked (and sent to the camera as is) and EVERY file it returned. */
@@ -55,6 +75,7 @@ export function logSearch(opts: {
       sizeBytes: file.sizeBytes,
       trackID: file.trackID,
       contentType: file.contentType,
+      rawItem: file.raw,
     });
   }
 }

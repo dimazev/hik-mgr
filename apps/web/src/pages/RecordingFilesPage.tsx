@@ -22,7 +22,7 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogActions from '@mui/material/DialogActions';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
-import { dayTimeText, fileTimes, formatWallClock, recordingName, type DownloadTaskFileInput } from '@hik-mgr/shared';
+import { dayTimeText, deviceFileName, fileTimes, formatWallClock, recordingName, type DownloadTaskFileInput } from '@hik-mgr/shared';
 import { api } from '../api/client';
 import { useLocale } from '../i18n/LocaleContext';
 
@@ -172,6 +172,7 @@ export default function RecordingFilesPage() {
                   <TableCell>{t('recordings.start')}</TableCell>
                   <TableCell>{t('recordings.end')}</TableCell>
                   <TableCell>{t('recordingFiles.colSize')}</TableCell>
+                  <TableCell>{t('recordingFiles.colDeviceFile')}</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -190,11 +191,14 @@ export default function RecordingFilesPage() {
                     <TableCell>{dayTimeText(fileTimes(f.playbackURI, f.startTime, f.endTime).startTime)}</TableCell>
                     <TableCell>{dayTimeText(fileTimes(f.playbackURI, f.startTime, f.endTime).endTime)}</TableCell>
                     <TableCell>{f.sizeBytes ?? '—'}</TableCell>
+                    <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }} title={f.playbackURI}>
+                      {deviceFileName(f.playbackURI) ?? '—'}
+                    </TableCell>
                   </TableRow>
                 ))}
                 {files.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6}>
+                    <TableCell colSpan={7}>
                       <Typography color="text.secondary">{t('recordingFiles.noneInRange')}</Typography>
                     </TableCell>
                   </TableRow>

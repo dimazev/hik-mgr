@@ -94,11 +94,41 @@ function compactToIso(compact: string): string | null {
   return m ? `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}Z` : null;
 }
 
+/** The file name the camera gave the recording (the `name=` of its playbackURI), or null. */
+export function deviceFileName(playbackURI: string | null | undefined): string | null {
+  const raw = /[?&]name=([^&]+)/i.exec(playbackURI ?? '')?.[1];
+  if (!raw) return null;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 /**
- * The real start and end of a recording file. A Hikvision playbackURI carries them
- * (".../tracks/101?starttime=20261031T221437Z&endtime=20261031T224544Z&name=..."): those are the file's own times,
- * while the search result's timeSpan can follow the range that was searched. Falls back to the search result when the
- * URI has no times. Always ISO UTC.
+ * Timestamps written inside a camera file name, in order: "ch01_20261103143400_20261103150500" -> 14:34:00, 15:05:00.
+ * Only the full YYYYMMDDhhmmss form is read (optionally with a T, _ or - between date and time).
+ */
+function namedTimes(name: string | null): string[] {
+  if (!name) return [];
+  const out: string[] = [];
+  for (const m of name.matchAll(/(20\d{2})(\d{2})(\d{2})[T_-]?(\d{2})(\d{2})(\d{2})/g)) {
+    const [, y, mo, d, h, mi, s] = m;
+    if (Number(mo) < 1 || Number(mo) > 12 || Number(d) < 1 || Number(d) > 31 || Number(h) > 23 || Number(mi) > 59 || Number(s) > 59) continue;
+    out.push(`${y}-${mo}-${d}T${h}:${mi}:${s}Z`);
+  }
+  return out;
+}
+
+/**
+ * The real start and end of a recording file. The camera's search result clips a recording to the window that was searched
+ * (asked 15:00 -> the file that began at 14:34 is reported as beginning at 15:00), so the sources, best first:
+ *  1. a start time written in the camera's own file name (`name=` in the playbackURI), when it is not later than the
+ *     start in the address (a clipped start can only be later than the truth, so a later one means it is not a time);
+ *  2. the `starttime=` / `endtime=` of the playbackURI
+ *     (".../tracks/101?starttime=20261031T221437Z&endtime=20261031T224544Z&name=...");
+ *  3. the search result's own timeSpan.
+ * Always ISO.
  */
 export function fileTimes(
   playbackURI: string | null | undefined,
@@ -107,10 +137,11 @@ export function fileTimes(
 ): { startTime: string | null; endTime: string | null } {
   const start = /[?&]starttime=([0-9TZ]+)/i.exec(playbackURI ?? '')?.[1];
   const end = /[?&]endtime=([0-9TZ]+)/i.exec(playbackURI ?? '')?.[1];
-  return {
-    startTime: (start && compactToIso(start)) || searchStart || null,
-    endTime: (end && compactToIso(end)) || searchEnd || null,
-  };
+  let startTime = (start && compactToIso(start)) || searchStart || null;
+  const endTime = (end && compactToIso(end)) || searchEnd || null;
+  const named = namedTimes(deviceFileName(playbackURI))[0];
+  if (named && (!startTime || Date.parse(named) <= Date.parse(startTime))) startTime = named;
+  return { startTime, endTime };
 }
 
 /** `startTime` plus `seconds`, as an ISO UTC timestamp. */

@@ -4,6 +4,7 @@ import type { Readable } from 'node:stream';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { downloadRecording, type DeviceConn, type DownloadProgress } from './hik/isapi';
 import { addSeconds } from '@hik-mgr/shared';
+import { logDownloaded } from './cameraLog';
 import { convertVideo, partsNeeded, probeDuration, splitVideo, type ConvertProgress } from './videoConvert';
 import { sanitizeFilename, convertedFilename, convertedPartFilename, convertedPartPattern, listConvertedParts } from './fileNaming';
 import {
@@ -303,6 +304,7 @@ export async function runDownloadTask(taskId: number, conn: DeviceConn): Promise
               log(taskId, `  "${file.filename}": ${file.startTime} -> ${realEnd} (${Math.round(downloadedSeconds)}s in the file)`);
             }
           }
+          logDownloaded({ taskId, fileId: file.id, playbackURI: file.playbackURI, startTime: file.startTime ?? null, endTime: getDownloadTask(taskId)?.files.find((x) => x.id === file.id)?.endTime ?? file.endTime ?? null, seconds: downloadedSeconds ?? null, bytes: downloadedBytes });
           log(taskId, `downloaded: "${file.filename}" (${Math.round(downloadedBytes / 1024)} KB)`);
           downloadSucceeded = true;
         } catch (err: any) {

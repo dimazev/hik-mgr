@@ -8,6 +8,7 @@ import { encryptSecret, decryptSecret } from '../crypto';
 import { getLabelsForDevice, setChannelLabel } from '../db/channelLabels';
 import { getRecordingHistory, saveRecordingHistory } from '../db/recordingHistory';
 import { createDownloadTask, updateTaskStatus } from '../db/downloadTasks';
+import { logSearch } from '../cameraLog';
 import { runDownloadTask } from '../downloadWorker';
 import {
   getDeviceStatus,
@@ -291,6 +292,12 @@ router.get(
     const startTime = typeof req.query.start === 'string' ? req.query.start : undefined;
     const endTime = typeof req.query.end === 'string' ? req.query.end : undefined;
     const maxResults = req.query.max ? Number(req.query.max) : undefined;
+    // Every file the camera returns is written to the camera log (see cameraLog.ts) and returned as is: the window searched is
+    // exactly the one asked for, nothing is widened and nothing is filtered out.
+    const record = <T extends { playbackURI?: string; startTime?: string; endTime?: string }>(files: T[], channel: string): T[] => {
+      logSearch({ deviceId, channel, asked: { start: startTime, end: endTime }, files });
+      return files;
+    };
     // Optional comma-separated list of channel ids to restrict the search
     // to (e.g. from the Recordings tab's channel picker) — lets a caller
     // that only wants a few channels skip scanning the rest of the device
@@ -307,7 +314,8 @@ router.get(
 
     if (track) {
       const result = await searchRecordings(conn, { trackID: track, startTime, endTime, maxResults });
-      res.json(result);
+      const files = record(result.files, `track ${track}`);
+      res.json({ ...result, files, numOfMatches: files.length });
       return;
     }
 
@@ -334,7 +342,8 @@ router.get(
 
     if (channelList.length === 0) {
       const result = await searchRecordings(conn, { trackID: 101, startTime, endTime, maxResults });
-      res.json({ ...result, files: result.files.map((f) => ({ ...f, deviceChannelName: null })) });
+      const files = record(result.files, 'track 101');
+      res.json({ ...result, numOfMatches: files.length, files: files.map((f) => ({ ...f, deviceChannelName: null })) });
       return;
     }
 
@@ -342,7 +351,8 @@ router.get(
     for (const ch of channelList) {
       const trackID = ch.id * 100 + 1;
       const result = await searchRecordings(conn, { trackID, startTime, endTime, maxResults });
-      merged.push(...result.files.map((f) => ({ ...f, deviceChannelName: ch.name })));
+      const found = record(result.files, ch.name);
+      merged.push(...found.map((f) => ({ ...f, deviceChannelName: ch.name })));
     }
     res.json({ numOfMatches: merged.length, files: merged });
   })
